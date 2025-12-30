@@ -81,59 +81,7 @@ class ContentProcessor:
         )
         return llm.with_structured_output(AIParser)
     
-    @staticmethod
-    def clean_directory(base_dir: Path) -> None:
-        """
-        Clean all project data directories before processing new PDF.
-        Deletes: pickle files, JSON files, images, and ChromaDB data.
-        
-        Args:
-            base_dir: Base data directory containing all subdirectories
-        """
-        from config.settings import settings
-        
-        directories_to_clean = [
-            (settings.PICKLE_DIR, "*.pkl", "Pickle files"),
-            (settings.JSON_DIR, "*.json", "JSON files"),
-            (settings.IMAGE_DIR, "*", "Image files"),
-            (settings.CHROMA_DIR, "*", "ChromaDB data")
-        ]
-        
-        print("\nCleaning workspace before processing new PDF...")
-        print("="*60)
-        
-        for directory, pattern, description in directories_to_clean:
-            if not directory.exists():
-                continue
-            
-            deleted_count = 0
-            
-            # For ChromaDB, delete entire subdirectories
-            if directory == settings.CHROMA_DIR:
-                for item in directory.iterdir():
-                    if item.is_dir():
-                        try:
-                            import shutil
-                            shutil.rmtree(item)
-                            deleted_count += 1
-                            print(f"[VB Deleted] Deleted ChromaDB collection: {item.name}")
-                        except Exception as e:
-                            print(f"[]Could not delete {item.name}: {e}")
-            else:
-                # For other directories, delete matching files
-                for file in directory.glob(pattern):
-                    if file.is_file():
-                        try:
-                            file.unlink()
-                            deleted_count += 1
-                        except Exception as e:
-                            print(f"Could not delete {file.name}: {e}")
-            
-            if deleted_count > 0:
-                print(f"Deleted {deleted_count} {description}")
-        
-        print("="*60)
-        print("Workspace cleaned successfully!\n")
+    # REMOVED: No longer cleaning directories - projects are now isolated
     
     def separate_content_types(self, chunk, image_counter: dict) -> Dict:
         """
@@ -347,12 +295,31 @@ TEXT CONTENT:
         """
         print("Processing chunks with AI Summaries (Multi-API Async Mode)...")
         
-        # Clean entire workspace before processing
-        from config.settings import settings
-        self.clean_directory(settings.DATA_DIR)
+        # No longer cleaning - project-based structure keeps data isolated
+        
+        # Find highest existing image number in the directory
+        existing_images = list(Path(self.image_dir).glob("image_*.png"))
+        if existing_images:
+            # Extract numbers from filenames like "image_0001.png"
+            existing_numbers = []
+            for img in existing_images:
+                try:
+                    # Extract number from filename: image_0001.png -> 0001 -> 1
+                    num_str = img.stem.split('_')[1]  # Get "0001" part
+                    existing_numbers.append(int(num_str))
+                except (IndexError, ValueError):
+                    pass
+            
+            if existing_numbers:
+                start_count = max(existing_numbers) + 1
+                print(f"Found {len(existing_images)} existing images, starting from image_{start_count:04d}.png")
+            else:
+                start_count = 1
+        else:
+            start_count = 1
         
         total_chunks = len(chunks)
-        image_counter = {'count': 1}
+        image_counter = {'count': start_count}
         
         # Step 1: Extract content from all chunks (synchronous)
         print(f"\nExtracting content from {total_chunks} chunks...")

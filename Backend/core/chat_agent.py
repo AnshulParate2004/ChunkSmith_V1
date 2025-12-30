@@ -1,6 +1,6 @@
 """
 AI Chat Agent with RAG capabilities (Optimized + Route Compatible)
-File: D:\MultiModulRag\Backend\core\chat_agent.py
+File: D:\\MultiModulRag\\Backend\\core\\chat_agent.py
 
 OPTIMIZATIONS:
 - Uses pre-stored base64 images (no disk re-encoding)
@@ -42,14 +42,16 @@ class ChatResponse(BaseModel):
 class ChatAgent:
     """Chat agent with RAG capabilities"""
     
-    def __init__(self, document_id: str):
+    def __init__(self, project_id: str, chroma_dir: str = None, image_dir: str = None):
         """
-        Initialize chat agent for a specific document
+        Initialize chat agent for a specific project
         
         Args:
-            document_id: ID of the document to chat about
+            project_id: ID of the project to chat about
+            chroma_dir: Path to ChromaDB directory (optional, uses settings if not provided)
+            image_dir: Path to images directory (optional, uses settings if not provided)
         """
-        self.document_id = document_id
+        self.project_id = project_id
         self.conversation_history = []
         
         # Initialize base LLM for structured output
@@ -59,15 +61,22 @@ class ChatAgent:
             google_api_key=os.getenv("GOOGLE_API_KEY")
         ).with_structured_output(ChatResponse)
         
+        # Set paths
+        if chroma_dir is None:
+            chroma_dir = str(settings.get_project_chroma_dir(project_id))
+        if image_dir is None:
+            image_dir = str(settings.get_project_image_dir(project_id))
+        
+        self.image_dir = image_dir
+        
         # Load vector store
-        vector_store_path = os.path.join(settings.CHROMA_DIR, document_id)
-        if not os.path.exists(vector_store_path):
-            raise FileNotFoundError(f"Vector store not found for document: {document_id}")
+        if not os.path.exists(chroma_dir):
+            raise FileNotFoundError(f"Vector store not found for project: {project_id}")
         
         self.vector_manager = VectorStoreManager(embedding_model=settings.EMBEDDING_MODEL)
         self.vectorstore = self.vector_manager.load_vector_store(
-            persist_directory=vector_store_path,
-            collection_name=document_id
+            persist_directory=chroma_dir,
+            collection_name=project_id
         )
         
         # Optimized system prompt with structured output instructions

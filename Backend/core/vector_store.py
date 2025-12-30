@@ -1,4 +1,4 @@
-"""Vector store operations using ChromaDB"""
+"""Vector store operations using ChromaDB with append support"""
 import json
 import re
 from typing import List
@@ -77,42 +77,6 @@ class VectorStoreManager:
         if original_name != collection_name:
             print(f"Collection name sanitized: '{original_name}' -> '{collection_name}'")
         
-        
-        # clean_json = [
-        #     {
-        #         "chunk_index": doc.metadata.get("chunk_index"),
-        #         "enhanced_content": doc.page_content,
-        #         "original_text": doc.metadata.get("original_text", ""),
-        #         "raw_tables_html": doc.metadata.get("raw_tables_html", []),
-        #         "ai_questions": doc.metadata.get("ai_questions", ""),
-        #         "ai_summary": doc.metadata.get("ai_summary", ""),
-        #         "image_interpretation": doc.metadata.get("image_interpretation", ""),
-        #         "table_interpretation": doc.metadata.get("table_interpretation", ""),
-        #         "image_paths": doc.metadata.get("image_paths", []),
-        #         "image_base64": doc.metadata.get("image_base64", []),
-        #         "page_numbers": doc.metadata.get("page_numbers", []),
-        #         "content_types": doc.metadata.get("content_types", []),
-        #     }
-        #     for doc in data
-        # ]
-
-        # doc = Document(
-        #         page_content=combined_content,
-        #         metadata={
-        #             "chunk_index": i,
-        #             "original_text": content_data['text'],
-        #             "raw_tables_html": content_data['tables'], ---------- #List[str]
-        #             "ai_questions": ai_response.question,
-        #             "ai_summary": ai_response.summary,
-        #             "image_interpretation": ai_response.image_interpretation, ---------- #List[str]
-        #             "table_interpretation": ai_response.table_interpretation, ---------- #List[str]
-        #             "image_paths": content_data['images_dirpath'], ---------- #List[str]
-        #             "image_base64": content_data['image_base64'], ---------- #List[str]
-        #             "page_numbers": content_data['page_no'], ---------- #List[str]
-        #             "content_types": content_data['types'], ---------- #List[str]
-        #         }
-        #     )
-        
         # Convert list metadata to JSON strings (ChromaDB requirement)
         for doc in documents:
             if "raw_tables_html" in doc.metadata:
@@ -142,6 +106,75 @@ class VectorStoreManager:
         
         print(f"Vector store created with {len(documents)} documents")
         print(f"Saved to {persist_directory}")
+        print(f"Collection name: {collection_name}")
+        
+        return vectorstore
+    
+    def append_to_vector_store(
+        self,
+        documents: List[Document],
+        persist_directory: str,
+        collection_name: str = "multimodal_rag"
+    ):
+        """
+        Append documents to existing vector store (or create if doesn't exist)
+        
+        Args:
+            documents: List of LangChain documents to add
+            persist_directory: Directory where database is persisted
+            collection_name: Name of the collection (will be sanitized)
+            
+        Returns:
+            ChromaDB vector store instance
+        """
+        print(f"Appending {len(documents)} documents to vector store...")
+        
+        # Sanitize collection name
+        collection_name = self.sanitize_collection_name(collection_name)
+        
+        # Convert list metadata to JSON strings
+        for doc in documents:
+            if "raw_tables_html" in doc.metadata:
+                doc.metadata["raw_tables_html"] = json.dumps(doc.metadata["raw_tables_html"])
+            if "image_interpretation" in doc.metadata:
+                doc.metadata["image_interpretation"] = json.dumps(doc.metadata["image_interpretation"])
+            if "table_interpretation" in doc.metadata:
+                doc.metadata["table_interpretation"] = json.dumps(doc.metadata["table_interpretation"])
+            if "image_paths" in doc.metadata:
+                doc.metadata["image_paths"] = json.dumps(doc.metadata["image_paths"])
+            if "image_base64" in doc.metadata:
+                doc.metadata["image_base64"] = json.dumps(doc.metadata["image_base64"])
+            if "page_numbers" in doc.metadata:
+                doc.metadata["page_numbers"] = json.dumps(doc.metadata["page_numbers"])
+            if "content_types" in doc.metadata:
+                doc.metadata["content_types"] = json.dumps(doc.metadata["content_types"])
+        
+        try:
+            # Try to load existing vector store
+            vectorstore = Chroma(
+                persist_directory=persist_directory,
+                embedding_function=self.embedding_model,
+                collection_name=collection_name
+            )
+            print(f"Loaded existing vector store: {collection_name}")
+            
+            # Add new documents
+            vectorstore.add_documents(documents)
+            print(f"Appended {len(documents)} documents to existing collection")
+            
+        except Exception as e:
+            print(f"Vector store doesn't exist, creating new one: {str(e)}")
+            # Create new if doesn't exist
+            vectorstore = Chroma.from_documents(
+                documents=documents,
+                embedding=self.embedding_model,
+                persist_directory=persist_directory,
+                collection_name=collection_name,
+                collection_metadata={"hnsw:space": "cosine"}
+            )
+            print(f"Created new vector store with {len(documents)} documents")
+        
+        print(f"Vector store path: {persist_directory}")
         print(f"Collection name: {collection_name}")
         
         return vectorstore

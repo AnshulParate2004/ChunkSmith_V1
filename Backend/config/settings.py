@@ -1,18 +1,12 @@
-"""Configuration settings for the application"""
+"""Configuration settings for the application with project-based structure"""
 from pathlib import Path
 from pydantic_settings import BaseSettings
+import os
 
 class Settings(BaseSettings):
     # Base paths
     BASE_DIR: Path = Path(__file__).parent.parent
     DATA_DIR: Path = BASE_DIR / "data"
-    
-    # Data subdirectories
-    UPLOAD_DIR: Path = DATA_DIR / "uploads"
-    IMAGE_DIR: Path = DATA_DIR / "images"
-    PICKLE_DIR: Path = DATA_DIR / "pickle"
-    JSON_DIR: Path = DATA_DIR / "json"
-    CHROMA_DIR: Path = DATA_DIR / "chroma_db"
     
     # PDF Processing settings
     MAX_CHARACTERS: int = 3000
@@ -37,11 +31,65 @@ class Settings(BaseSettings):
         env_file = ".env"
         case_sensitive = True
         extra = "allow"
+    
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
-        # Create directories on initialization
-        for dir_path in [self.UPLOAD_DIR, self.IMAGE_DIR, self.PICKLE_DIR, 
-                         self.JSON_DIR, self.CHROMA_DIR]:
-            dir_path.mkdir(parents=True, exist_ok=True)
+        # Create base data directory
+        self.DATA_DIR.mkdir(parents=True, exist_ok=True)
+    
+    def get_project_dir(self, project_id: str) -> Path:
+        """Get project-specific directory"""
+        return self.DATA_DIR / project_id
+    
+    def get_project_upload_dir(self, project_id: str) -> Path:
+        """Get project-specific upload directory"""
+        path = self.get_project_dir(project_id) / "uploads"
+        path.mkdir(parents=True, exist_ok=True)
+        return path
+    
+    def get_project_image_dir(self, project_id: str) -> Path:
+        """Get project-specific image directory"""
+        path = self.get_project_dir(project_id) / "images"
+        path.mkdir(parents=True, exist_ok=True)
+        return path
+    
+    def get_project_pickle_dir(self, project_id: str) -> Path:
+        """Get project-specific pickle directory"""
+        path = self.get_project_dir(project_id) / "pickle"
+        path.mkdir(parents=True, exist_ok=True)
+        return path
+    
+    def get_project_json_dir(self, project_id: str) -> Path:
+        """Get project-specific JSON directory"""
+        path = self.get_project_dir(project_id) / "json"
+        path.mkdir(parents=True, exist_ok=True)
+        return path
+    
+    def get_project_chroma_dir(self, project_id: str) -> Path:
+        """Get project-specific ChromaDB directory"""
+        path = self.get_project_dir(project_id) / "chroma_db"
+        path.mkdir(parents=True, exist_ok=True)
+        return path
+    
+    def list_projects(self) -> list:
+        """List all existing projects"""
+        if not self.DATA_DIR.exists():
+            return []
+        
+        projects = []
+        for item in self.DATA_DIR.iterdir():
+            if item.is_dir():
+                # Get project stats
+                uploads_dir = item / "uploads"
+                file_count = len(list(uploads_dir.glob("*.pdf"))) if uploads_dir.exists() else 0
+                
+                projects.append({
+                    "project_id": item.name,
+                    "project_path": str(item),
+                    "file_count": file_count,
+                    "created_at": item.stat().st_ctime
+                })
+        
+        return sorted(projects, key=lambda x: x["created_at"], reverse=True)
 
 settings = Settings()
