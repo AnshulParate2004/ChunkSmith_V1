@@ -18,8 +18,7 @@ interface Message {
 }
 
 const ChatPage = () => {
-  // Now uses projectId instead of documentId
-  const { documentId: projectId } = useParams<{ documentId: string }>();
+  const { projectId } = useParams<{ projectId: string }>();
   const navigate = useNavigate();
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);

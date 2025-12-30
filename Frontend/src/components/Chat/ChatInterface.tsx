@@ -17,9 +17,10 @@ interface Message {
 
 interface ChatInterfaceProps {
   documentId: string;
+  projectId: string;
 }
 
-export const ChatInterface = ({ documentId }: ChatInterfaceProps) => {
+export const ChatInterface = ({ documentId, projectId }: ChatInterfaceProps) => {
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
   const [currentImages, setCurrentImages] = useState<ChatImage[]>([]);
@@ -31,7 +32,7 @@ export const ChatInterface = ({ documentId }: ChatInterfaceProps) => {
   const streamingMessageIdRef = useRef<string>('');
 
   useEffect(() => {
-    if (documentId) {
+    if (projectId) {
       initializeChat();
     }
     
@@ -40,7 +41,7 @@ export const ChatInterface = ({ documentId }: ChatInterfaceProps) => {
         eventSourceRef.current.close();
       }
     };
-  }, [documentId]);
+  }, [projectId]);
 
   useEffect(() => {
     scrollToBottom();
@@ -51,10 +52,11 @@ export const ChatInterface = ({ documentId }: ChatInterfaceProps) => {
   };
 
   const initializeChat = async () => {
-    if (!documentId) return;
+    if (!projectId) return;
     
     try {
-      const response = await apiService.initializeChat(documentId);
+      // Use projectId for chat initialization (backend expects project_id)
+      const response = await apiService.initializeChat(projectId);
       setSessionId(response.session_id);
       toast.success('Chat initialized successfully');
     } catch (error) {

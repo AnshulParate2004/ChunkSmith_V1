@@ -526,10 +526,11 @@ async def initialize_chat(project_id: str):
     try:
         # Check if project exists
         chroma_dir = settings.get_project_chroma_dir(project_id)
-        if not (chroma_dir / project_id).exists():
+        chroma_db_file = chroma_dir / "chroma.sqlite3"
+        if not chroma_db_file.exists():
             raise HTTPException(
                 status_code=404, 
-                detail=f"Project '{project_id}' not found or has no processed documents"
+                detail=f"Project '{project_id}' not found or has no processed documents. ChromaDB not found at: {chroma_db_file}"
             )
         
         # Create chat agent with project-specific paths
@@ -662,8 +663,9 @@ async def search_documents(request: SearchRequest):
     """Search documents within a specific project"""
     try:
         chroma_dir = settings.get_project_chroma_dir(request.project_id)
+        chroma_db_file = chroma_dir / "chroma.sqlite3"
         
-        if not (chroma_dir / request.project_id).exists():
+        if not chroma_db_file.exists():
             raise HTTPException(
                 status_code=404, 
                 detail=f"Project '{request.project_id}' not found or has no processed documents"

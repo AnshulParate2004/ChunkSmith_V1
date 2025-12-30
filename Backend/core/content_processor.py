@@ -55,12 +55,17 @@ class ContentProcessor:
             key = os.getenv(f"GOOGLE_API_KEY_{i}")
             if key and key.strip():
                 api_keys.append(key.strip())
+                print(f"DEBUG: Loaded GOOGLE_API_KEY_{i}")
         
         # Fallback to single GOOGLE_API_KEY if no numbered keys found
         if not api_keys:
             single_key = os.getenv("GOOGLE_API_KEY")
             if single_key and single_key.strip():
                 api_keys.append(single_key.strip())
+                print(f"DEBUG: Loaded GOOGLE_API_KEY (fallback)")
+            else:
+                print(f"DEBUG: No GOOGLE_API_KEY found in environment!")
+                print(f"DEBUG: Available env vars: {[k for k in os.environ.keys() if 'GOOGLE' in k]}")
         
         return api_keys
     
