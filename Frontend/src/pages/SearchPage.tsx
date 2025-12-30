@@ -1,17 +1,42 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Search, Filter } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
-import { apiService, SearchQuery } from '@/services/api';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { apiService, SearchQuery, Project } from '@/services/api';
 import { toast } from 'sonner';
 
 const SearchPage = () => {
   const [query, setQuery] = useState('');
+  const [projectId, setProjectId] = useState('');
   const [documentId, setDocumentId] = useState('');
   const [resultsPerPage, setResultsPerPage] = useState(5);
   const [results, setResults] = useState<any[]>([]);
   const [isSearching, setIsSearching] = useState(false);
+  const [projects, setProjects] = useState<Project[]>([]);
+  const [isLoadingProjects, setIsLoadingProjects] = useState(true);
+
+  useEffect(() => {
+    loadProjects();
+  }, []);
+
+  const loadProjects = async () => {
+    try {
+      setIsLoadingProjects(true);
+      const response = await apiService.listProjects();
+      setProjects(response.projects || []);
+      // Auto-select the current project if available
+      const currentProjectId = localStorage.getItem('currentProjectId');
+      if (currentProjectId && response.projects?.some(p => p.project_id === currentProjectId)) {
+        setProjectId(currentProjectId);
+      }
+    } catch (error) {
+      console.error('Failed to load projects:', error);
+    } finally {
+      setIsLoadingProjects(false);
+    }
+  };
 
   const handleSearch = async () => {
     if (!query.trim()) {
@@ -19,10 +44,16 @@ const SearchPage = () => {
       return;
     }
 
+    if (!projectId) {
+      toast.error('Please select a project');
+      return;
+    }
+
     setIsSearching(true);
     try {
       const searchQuery: SearchQuery = {
         query: query.trim(),
+        project_id: projectId,
         k: resultsPerPage,
       };
 
@@ -53,6 +84,22 @@ const SearchPage = () => {
 
         <div className="glass-card p-6 space-y-6">
           <div className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="project-select">Project</Label>
+              <Select value={projectId} onValueChange={setProjectId} disabled={isLoadingProjects}>
+                <SelectTrigger>
+                  <SelectValue placeholder={isLoadingProjects ? "Loading projects..." : "Select a project"} />
+                </SelectTrigger>
+                <SelectContent>
+                  {projects.map((project) => (
+                    <SelectItem key={project.project_id} value={project.project_id}>
+                      {project.project_id}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
             <div className="space-y-2">
               <Label htmlFor="search-query">Search Query</Label>
               <div className="relative">
@@ -93,7 +140,7 @@ const SearchPage = () => {
             </div>
           </div>
 
-          <Button onClick={handleSearch} disabled={isSearching} className="w-full">
+          <Button onClick={handleSearch} disabled={isSearching || !projectId} className="w-full">
             {isSearching ? 'Searching...' : 'Search'}
           </Button>
         </div>

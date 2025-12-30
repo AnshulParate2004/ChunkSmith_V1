@@ -170,7 +170,7 @@ const ProjectPage = () => {
 
     setIsUploading(true);
     try {
-      const result = await apiService.uploadPDF(selectedFile, settings);
+      const result = await apiService.uploadPDF(selectedFile, settings, projectId!);
       
       toast({
         title: "File uploaded successfully!",

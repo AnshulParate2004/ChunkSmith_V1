@@ -26,27 +26,32 @@ const UploadPage = () => {
       return;
     }
 
+    const currentProjectId = localStorage.getItem('currentProjectId');
+    if (!currentProjectId) {
+      toast.error('Please select a project first');
+      navigate('/');
+      return;
+    }
+
     setIsUploading(true);
     try {
-      const response = await apiService.uploadPDF(selectedFile, settings);
+      // Now passes project_id to the API
+      const response = await apiService.uploadPDF(selectedFile, settings, currentProjectId);
       toast.success('Upload started successfully');
 
-      // Attach this document to the currently selected project (if any)
-      const currentProjectId = localStorage.getItem('currentProjectId');
-      if (currentProjectId) {
-        const projectDocsKey = `project_${currentProjectId}_docs`;
-        const existingDocs = JSON.parse(localStorage.getItem(projectDocsKey) || '[]');
-        const newDoc = {
-          name: selectedFile.name,
-          size: selectedFile.size,
-          documentId: response.document_id,
-          uploadedAt: new Date().toISOString(),
-          status: 'processing',
-          projectId: currentProjectId,
-        };
-        const updatedDocs = [...existingDocs, newDoc];
-        localStorage.setItem(projectDocsKey, JSON.stringify(updatedDocs));
-      }
+      // Attach this document to the currently selected project
+      const projectDocsKey = `project_${currentProjectId}_docs`;
+      const existingDocs = JSON.parse(localStorage.getItem(projectDocsKey) || '[]');
+      const newDoc = {
+        name: selectedFile.name,
+        size: selectedFile.size,
+        documentId: response.document_id,
+        uploadedAt: new Date().toISOString(),
+        status: 'processing',
+        projectId: currentProjectId,
+      };
+      const updatedDocs = [...existingDocs, newDoc];
+      localStorage.setItem(projectDocsKey, JSON.stringify(updatedDocs));
 
       navigate(`/processing/${response.document_id}`);
     } catch (error: any) {

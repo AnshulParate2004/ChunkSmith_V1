@@ -166,6 +166,7 @@ const ProcessingPage = () => {
         <ViewDocumentsModal
           fileName={`Document-${documentId}.pdf`}
           documentId={documentId || ''}
+          projectId={localStorage.getItem('currentProjectId') || ''}
           onClose={() => setShowViewModal(false)}
         />
       )}

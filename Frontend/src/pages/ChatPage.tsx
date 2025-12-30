@@ -18,7 +18,8 @@ interface Message {
 }
 
 const ChatPage = () => {
-  const { documentId } = useParams<{ documentId: string }>();
+  // Now uses projectId instead of documentId
+  const { documentId: projectId } = useParams<{ documentId: string }>();
   const navigate = useNavigate();
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
@@ -31,7 +32,7 @@ const ChatPage = () => {
   const streamingMessageIdRef = useRef<string>('');
 
   useEffect(() => {
-    if (documentId) {
+    if (projectId) {
       initializeChat();
     }
     
@@ -40,7 +41,7 @@ const ChatPage = () => {
         eventSourceRef.current.close();
       }
     };
-  }, [documentId]);
+  }, [projectId]);
 
   useEffect(() => {
     scrollToBottom();
@@ -51,10 +52,11 @@ const ChatPage = () => {
   };
 
   const initializeChat = async () => {
-    if (!documentId) return;
+    if (!projectId) return;
     
     try {
-      const response = await apiService.initializeChat(documentId);
+      // Now uses project_id instead of document_id
+      const response = await apiService.initializeChat(projectId);
       setSessionId(response.session_id);
       toast.success('Chat initialized successfully');
     } catch (error) {
@@ -255,13 +257,13 @@ const ChatPage = () => {
             <Button
               variant="ghost"
               size="icon"
-              onClick={() => navigate(`/processing/${documentId}`)}
+              onClick={() => navigate(`/project/${projectId}`)}
             >
               <ArrowLeft className="w-5 h-5" />
             </Button>
             <div>
-              <h1 className="text-2xl font-bold">Document Chat</h1>
-              <p className="text-sm text-muted-foreground">Ask questions about your document</p>
+              <h1 className="text-2xl font-bold">Project Chat</h1>
+              <p className="text-sm text-muted-foreground">Ask questions about your documents in {projectId}</p>
             </div>
           </div>
           <Button 
@@ -284,7 +286,7 @@ const ChatPage = () => {
               {messages.length === 0 && !isStreaming && (
                 <div className="text-center py-16 text-muted-foreground">
                   <p className="text-lg mb-2">Start a conversation</p>
-                  <p className="text-sm">Ask questions about your document and get detailed answers</p>
+                  <p className="text-sm">Ask questions about your documents and get detailed answers</p>
                 </div>
               )}
               
@@ -319,7 +321,7 @@ const ChatPage = () => {
               value={inputMessage}
               onChange={(e) => setInputMessage(e.target.value)}
               onKeyPress={(e) => e.key === 'Enter' && handleSendMessage()}
-              placeholder="Ask a question about your document..."
+              placeholder="Ask a question about your documents..."
               disabled={isStreaming || !sessionId}
               className="flex-1"
             />

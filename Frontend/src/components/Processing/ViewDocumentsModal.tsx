@@ -9,12 +9,14 @@ import { apiService, DocumentChunk } from '@/services/api';
 interface ViewDocumentsModalProps {
   fileName: string;
   documentId: string;
+  projectId: string;
   onClose: () => void;
 }
 
 export const ViewDocumentsModal = ({ 
   fileName, 
-  documentId, 
+  documentId,
+  projectId,
   onClose 
 }: ViewDocumentsModalProps) => {
   const [activeTab, setActiveTab] = useState('view-chunks');
@@ -31,7 +33,7 @@ export const ViewDocumentsModal = ({
       try {
         setLoading(true);
         setError(null);
-        const response = await apiService.getDocumentChunks(documentId);
+        const response = await apiService.getDocumentChunks(projectId, documentId);
         if (response.success) {
           setChunks(response.chunks);
           setFileSizeKb(response.file_size_kb);
@@ -45,10 +47,10 @@ export const ViewDocumentsModal = ({
       }
     };
 
-    if (documentId) {
+    if (documentId && projectId) {
       fetchChunks();
     }
-  }, [documentId]);
+  }, [documentId, projectId]);
 
   const getChunkTypes = (chunk: DocumentChunk): string[] => {
     return chunk.content_types || [];

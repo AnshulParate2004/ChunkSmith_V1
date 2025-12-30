@@ -11,6 +11,7 @@ export interface ProcessSettings {
 
 export interface SearchQuery {
   query: string;
+  project_id: string;
   document_id?: string;
   k?: number;
 }
@@ -21,6 +22,23 @@ export interface Document {
   images_extracted: number;
   processing_time: number;
   created_at: string;
+}
+
+export interface Project {
+  project_id: string;
+  file_count?: number;
+  pdf_count?: number;
+  chunks_in_db?: number;
+  image_count?: number;
+  created_at?: string;
+}
+
+export interface ProjectDetails {
+  project_id: string;
+  pdf_count: number;
+  chunks_in_db: number;
+  image_count: number;
+  documents: string[];
 }
 
 class ApiService {
@@ -34,36 +52,73 @@ class ApiService {
     return response.json();
   }
 
-  async uploadPDF(file: File, settings: ProcessSettings) {
+  // NEW: Create a project
+  async createProject(projectName: string): Promise<{ project_id: string }> {
+    const response = await fetch(`${API_BASE_URL}/projects`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ project_name: projectName }),
+    });
+
+    if (!response.ok) {
+      throw new Error(`Failed to create project: ${response.statusText}`);
+    }
+
+    return response.json();
+  }
+
+  // NEW: List all projects
+  async listProjects(): Promise<{ projects: Project[] }> {
+    const response = await fetch(`${API_BASE_URL}/projects`);
+    
+    if (!response.ok) {
+      throw new Error(`Failed to list projects: ${response.statusText}`);
+    }
+
+    return response.json();
+  }
+
+  // NEW: Get project details
+  async getProjectDetails(projectId: string): Promise<ProjectDetails> {
+    const response = await fetch(`${API_BASE_URL}/projects/${projectId}`);
+    
+    if (!response.ok) {
+      throw new Error(`Failed to get project details: ${response.statusText}`);
+    }
+
+    return response.json();
+  }
+
+  // UPDATED: Now requires project_id
+  async uploadPDF(file: File, settings: ProcessSettings, projectId: string) {
     console.log('=== Upload Debug ===');
+    console.log('Project ID:', projectId);
     console.log('Selected language code:', settings.languages);
     console.log('Full settings:', settings);
     
-    // ✅ FIX: Build query parameters for the URL (like Swagger does)
     const queryParams = new URLSearchParams({
+      project_id: projectId,
       max_characters: String(settings.maxCharacters),
       new_after_n_chars: String(settings.newAfterNChars),
       combine_text_under_n_chars: String(settings.combineTextUnderNChars),
       extract_images: String(settings.extractImages),
       extract_tables: String(settings.extractTables),
-      languages: settings.languages || 'english', // ✅ Send as query parameter
+      languages: settings.languages || 'english',
     });
 
     console.log('🔗 Query params:', queryParams.toString());
-    console.log('🌐 Language in URL:', settings.languages);
 
-    // ✅ Create FormData with ONLY the file
     const formData = new FormData();
     formData.append('file', file);
 
-    // ✅ FIX: Append query parameters to URL (like Swagger)
     const url = `${API_BASE_URL}/process-pdf?${queryParams.toString()}`;
     console.log('📤 POST URL:', url);
 
     const response = await fetch(url, {
       method: 'POST',
       body: formData,
-      // Don't set Content-Type - browser will set it with boundary
     });
 
     if (!response.ok) {
@@ -75,6 +130,7 @@ class ApiService {
     return result;
   }
 
+  // UPDATED: Now requires project_id in query
   async search(query: SearchQuery) {
     const response = await fetch(`${API_BASE_URL}/search`, {
       method: 'POST',
@@ -129,8 +185,9 @@ class ApiService {
     document.body.removeChild(a);
   }
 
-  async getDocumentChunks(documentId: string, includeImages: boolean = true): Promise<DocumentChunksResponse> {
-    const response = await fetch(`${API_BASE_URL}/documents/${documentId}/chunks?include_images=${includeImages}`);
+  // UPDATED: Now uses project_id path
+  async getDocumentChunks(projectId: string, documentId: string, includeImages: boolean = true): Promise<DocumentChunksResponse> {
+    const response = await fetch(`${API_BASE_URL}/projects/${projectId}/documents/${documentId}/chunks?include_images=${includeImages}`);
     
     if (!response.ok) {
       throw new Error(`Failed to fetch chunks: ${response.statusText}`);
@@ -139,8 +196,9 @@ class ApiService {
     return response.json();
   }
 
-  async initializeChat(documentId: string) {
-    const response = await fetch(`${API_BASE_URL}/chat/init/${documentId}`, {
+  // UPDATED: Now uses project_id instead of document_id
+  async initializeChat(projectId: string) {
+    const response = await fetch(`${API_BASE_URL}/chat/init/${projectId}`, {
       method: 'POST',
     });
 
@@ -161,6 +219,11 @@ class ApiService {
     }
 
     return response.json();
+  }
+
+  // NEW: Get image with project context
+  getImageUrl(projectId: string, filename: string): string {
+    return `${API_BASE_URL}/projects/${projectId}/images/${filename}`;
   }
 }
 
