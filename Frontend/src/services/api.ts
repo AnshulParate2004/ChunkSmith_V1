@@ -166,6 +166,25 @@ class ApiService {
     document.body.removeChild(a);
   }
 
+  async downloadProjectData(projectId: string) {
+    const response = await fetch(`${API_BASE_URL}/download-project/${projectId}`);
+    
+    if (!response.ok) {
+      throw new Error(`Download failed: ${response.statusText}`);
+    }
+    
+    const blob = await response.blob();
+    
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${projectId}_data.zip`;
+    document.body.appendChild(a);
+    a.click();
+    window.URL.revokeObjectURL(url);
+    document.body.removeChild(a);
+  }
+
   async downloadAllData() {
     const response = await fetch(`${API_BASE_URL}/download-all`);
     
@@ -178,7 +197,7 @@ class ApiService {
     const url = window.URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = 'project_data.zip';
+    a.download = 'all_projects_data.zip';
     document.body.appendChild(a);
     a.click();
     window.URL.revokeObjectURL(url);

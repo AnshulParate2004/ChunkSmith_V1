@@ -53,6 +53,9 @@ const UploadPage = () => {
       const updatedDocs = [...existingDocs, newDoc];
       localStorage.setItem(projectDocsKey, JSON.stringify(updatedDocs));
 
+      // Map document → project for reliable "Back to Project" behavior
+      localStorage.setItem(`doc_${response.document_id}_project`, currentProjectId);
+
       navigate(`/processing/${response.document_id}`);
     } catch (error: any) {
       toast.error(error.message || 'Upload failed');

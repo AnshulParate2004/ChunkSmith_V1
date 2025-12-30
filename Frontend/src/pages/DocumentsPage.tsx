@@ -36,7 +36,12 @@ const DocumentsPage = () => {
 
   const handleDownloadAll = async () => {
     try {
-      await apiService.downloadAllData();
+      const projectId = localStorage.getItem('currentProjectId');
+      if (projectId) {
+        await apiService.downloadProjectData(projectId);
+      } else {
+        await apiService.downloadAllData();
+      }
       toast.success('Downloading all documents');
     } catch (error) {
       toast.error('Download failed');

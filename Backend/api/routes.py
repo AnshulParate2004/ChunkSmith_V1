@@ -913,6 +913,43 @@ async def download_project_data(project_id: str):
         raise HTTPException(status_code=500, detail=f"Failed to create archive: {str(e)}")
 
 
+@router.get("/download-project-documents/{project_id}")
+async def download_project_documents_only(project_id: str):
+    """Download only the processed documents (JSON files) for a specific project"""
+    try:
+        json_dir = settings.get_project_json_dir(project_id)
+        
+        if not json_dir.exists():
+            raise HTTPException(status_code=404, detail=f"Project '{project_id}' not found")
+        
+        json_files = list(json_dir.glob("*.json"))
+        
+        if not json_files:
+            raise HTTPException(
+                status_code=404, 
+                detail=f"No processed documents found in project '{project_id}'"
+            )
+        
+        # Create temporary ZIP file
+        temp_zip = tempfile.NamedTemporaryFile(delete=False, suffix='.zip')
+        
+        with zipfile.ZipFile(temp_zip.name, 'w', zipfile.ZIP_DEFLATED) as zipf:
+            for json_file in json_files:
+                zipf.write(json_file, json_file.name)
+        
+        return FileResponse(
+            path=temp_zip.name,
+            filename=f"{project_id}_documents.zip",
+            media_type="application/zip",
+            headers={"Content-Disposition": f"attachment; filename={project_id}_documents.zip"}
+        )
+    
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to create archive: {str(e)}")
+
+
 @router.get("/health")
 async def health_check():
     """Health check endpoint"""

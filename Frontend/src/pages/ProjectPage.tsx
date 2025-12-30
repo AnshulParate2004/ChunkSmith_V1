@@ -43,7 +43,7 @@ const ProjectPage = () => {
   const [activeChatDoc, setActiveChatDoc] = useState<string | null>(null);
   
   const [settings, setSettings] = useState<ProcessSettings>({
-    languages: '',
+    languages: 'english',
     extractImages: true,
     extractTables: true,
     maxCharacters: 3000,
@@ -56,12 +56,17 @@ const ProjectPage = () => {
   }, [settings]);
 
   useEffect(() => {
+    if (projectId) {
+      // Ensure subsequent uploads & "Back" navigation resolve to the correct project
+      localStorage.setItem('currentProjectId', projectId);
+    }
+
     const loadDocuments = () => {
       const savedDocs = localStorage.getItem(`project_${projectId}_docs`);
       if (savedDocs) {
         let docs: UploadedDoc[] = JSON.parse(savedDocs);
         let hasUpdates = false;
-        
+
         docs = docs.map(doc => {
           if (doc.status === 'processing') {
             const processingData = localStorage.getItem(`processing_${doc.documentId}`);
@@ -72,34 +77,24 @@ const ProjectPage = () => {
           }
           return doc;
         });
-        
+
         if (hasUpdates) {
           localStorage.setItem(`project_${projectId}_docs`, JSON.stringify(docs));
         }
-        
+
         setUploadedDocs(docs);
+      } else {
+        // Keep UI consistent even when there are no docs yet
+        setUploadedDocs([]);
       }
     };
-    
+
     loadDocuments();
     const interval = setInterval(loadDocuments, 1000);
     return () => clearInterval(interval);
   }, [projectId]);
   
-  const getProjects = () => {
-    const savedProjects = localStorage.getItem('projects');
-    if (savedProjects) {
-      return JSON.parse(savedProjects);
-    }
-    return [
-      { id: "1", name: "Research Papers Q&A", files: 0, lastModified: "2 hours ago" },
-      { id: "2", name: "Legal Documents", files: 0, lastModified: "1 day ago" },
-      { id: "3", name: "Medical Records", files: 0, lastModified: "3 days ago" },
-    ];
-  };
-  
-  const projects = getProjects();
-  const currentProject = projects.find(p => p.id === projectId);
+  const projectTitle = projectId || 'Project';
 
   const filteredDocs = uploadedDocs.filter(doc => 
     doc.name.toLowerCase().includes(searchQuery.toLowerCase())
@@ -171,7 +166,10 @@ const ProjectPage = () => {
     setIsUploading(true);
     try {
       const result = await apiService.uploadPDF(selectedFile, settings, projectId!);
-      
+
+      // Map document → project for reliable "Back to Project" behavior
+      localStorage.setItem(`doc_${result.document_id}_project`, projectId!);
+
       toast({
         title: "File uploaded successfully!",
         description: `Processing document: ${selectedFile.name} (Language: ${settings.languages})`,
@@ -292,7 +290,7 @@ const ProjectPage = () => {
                     <ArrowLeft className="w-5 h-5" />
                   </Button>
                   <div>
-                    <h2 className="text-2xl font-bold">{currentProject?.name || 'Project'}</h2>
+                    <h2 className="text-2xl font-bold">{projectTitle}</h2>
                     <p className="text-sm text-muted-foreground">
                       Chatting with: {uploadedDocs.find(d => d.documentId === activeChatDoc)?.name}
                     </p>
@@ -316,8 +314,8 @@ const ProjectPage = () => {
                       <ArrowLeft className="w-5 h-5" />
                     </Button>
                     <div>
-                      <h2 className="text-3xl font-bold">{currentProject?.name || 'Project'}</h2>
-                      <p className="text-muted-foreground">{uploadedDocs.length} files • Last modified {currentProject?.lastModified || 'recently'}</p>
+                      <h2 className="text-3xl font-bold">{projectTitle}</h2>
+                      <p className="text-muted-foreground">{uploadedDocs.length} files • Last modified recently</p>
                     </div>
                   </div>
                 </div>

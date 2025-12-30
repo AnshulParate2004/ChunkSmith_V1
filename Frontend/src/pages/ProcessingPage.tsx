@@ -131,7 +131,12 @@ const ProcessingPage = () => {
 
   const handleDownload = async () => {
     try {
-      await apiService.downloadAllData();
+      const projectId = localStorage.getItem('currentProjectId');
+      if (projectId) {
+        await apiService.downloadProjectData(projectId);
+      } else {
+        await apiService.downloadAllData();
+      }
       toast.success('Download started');
     } catch (error) {
       toast.error('Download failed');
@@ -145,19 +150,15 @@ const ProcessingPage = () => {
   };
 
   const handleBack = () => {
-    // Try to find which project this document belongs to
-    const projects = JSON.parse(localStorage.getItem('projects') || '[]');
-    for (const project of projects) {
-      const docs = JSON.parse(localStorage.getItem(`project_${project.id}_docs`) || '[]');
-      if (docs.some((doc: any) => doc.documentId === documentId)) {
-        // Persist the current project so future uploads are correctly attached
-        localStorage.setItem('currentProjectId', project.id);
-        navigate(`/project/${project.id}`);
-        return;
-      }
+    const mappedProjectId = (documentId && localStorage.getItem(`doc_${documentId}_project`)) || localStorage.getItem('currentProjectId');
+
+    if (mappedProjectId) {
+      localStorage.setItem('currentProjectId', mappedProjectId);
+      navigate(`/project/${mappedProjectId}`);
+      return;
     }
-    // Fallback to project 1 if not found
-    navigate('/project/1');
+
+    navigate('/');
   };
 
   return (

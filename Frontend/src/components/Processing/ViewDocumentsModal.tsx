@@ -330,9 +330,12 @@ export const ViewDocumentsModal = ({
                       </div>
                     )}
 
-                    {/* Table Interpretation */}
-                    {selectedChunk.table_interpretation && 
-                     selectedChunk.table_interpretation !== '***DO NOT USE THIS TABLE***' && (
+                    {/* Table Interpretation - only show if there are actual tables */}
+                    {selectedChunk.raw_tables_html && 
+                     selectedChunk.raw_tables_html.length > 0 &&
+                     selectedChunk.table_interpretation && 
+                     selectedChunk.table_interpretation !== '***DO NOT USE THIS TABLE***' &&
+                     !selectedChunk.table_interpretation.includes('***TABLE SUMMARY FAILED***') && (
                       <div className="pt-4 border-t border-border">
                         <h4 className="text-sm font-medium mb-2 flex items-center gap-2">
                           <Table className="w-4 h-4 text-orange-500" />
@@ -341,6 +344,25 @@ export const ViewDocumentsModal = ({
                         <p className="text-sm text-muted-foreground whitespace-pre-wrap">
                           {selectedChunk.table_interpretation}
                         </p>
+                      </div>
+                    )}
+
+                    {/* Raw HTML Tables */}
+                    {selectedChunk.raw_tables_html && selectedChunk.raw_tables_html.length > 0 && (
+                      <div className="pt-4 border-t border-border">
+                        <h4 className="text-sm font-medium mb-2 flex items-center gap-2">
+                          <Table className="w-4 h-4 text-orange-500" />
+                          Tables ({selectedChunk.raw_tables_html.length})
+                        </h4>
+                        <div className="space-y-3">
+                          {selectedChunk.raw_tables_html.map((tableHtml, idx) => (
+                            <div 
+                              key={idx} 
+                              className="rounded-lg overflow-auto border border-border bg-background/50 p-2 text-sm [&_table]:w-full [&_table]:border-collapse [&_th]:border [&_th]:border-border [&_th]:bg-muted/50 [&_th]:px-2 [&_th]:py-1 [&_th]:text-left [&_th]:text-xs [&_th]:font-medium [&_td]:border [&_td]:border-border [&_td]:px-2 [&_td]:py-1 [&_td]:text-xs [&_td]:text-muted-foreground"
+                              dangerouslySetInnerHTML={{ __html: tableHtml }}
+                            />
+                          ))}
+                        </div>
                       </div>
                     )}
 
