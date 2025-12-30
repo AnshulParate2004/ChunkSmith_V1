@@ -840,6 +840,49 @@ async def get_supported_languages():
     }
 
 
+@router.get("/download-all")
+async def download_all_projects():
+    """Download ALL projects data as a single ZIP file"""
+    try:
+        projects = settings.list_projects()
+        
+        if not projects:
+            raise HTTPException(status_code=404, detail="No projects found")
+        
+        # Create temporary ZIP file
+        temp_zip = tempfile.NamedTemporaryFile(delete=False, suffix='.zip')
+        
+        with zipfile.ZipFile(temp_zip.name, 'w', zipfile.ZIP_DEFLATED) as zipf:
+            # Add each project's data to ZIP
+            for project in projects:
+                project_id = project["project_id"]
+                project_dir = settings.get_project_dir(project_id)
+                
+                if project_dir.exists():
+                    # Add all files from this project
+                    for item in project_dir.rglob("*"):
+                        if item.is_file():
+                            # Create path like: learning/uploads/file.pdf
+                            rel_path = item.relative_to(project_dir.parent)
+                            zipf.write(item, rel_path)
+        
+        # Generate filename with timestamp
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        filename = f"all_projects_{timestamp}.zip"
+        
+        return FileResponse(
+            path=temp_zip.name,
+            filename=filename,
+            media_type="application/zip",
+            headers={"Content-Disposition": f"attachment; filename={filename}"}
+        )
+    
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to create archive: {str(e)}")
+
+
 @router.get("/download-project/{project_id}")
 async def download_project_data(project_id: str):
     """Download all data for a specific project as ZIP"""
