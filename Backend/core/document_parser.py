@@ -122,6 +122,8 @@ class DocumentParser:
             hi_res_model_name="yolox",
             chunking_strategy="by_title",
             include_orig_elements=True,
+            split_pdf_page=True,
+            split_pdf_concurrency_level=15,
             languages=language_codes,
             extract_images_in_pdf=extract_images,
             extract_image_block_to_payload=extract_images,
@@ -143,3 +145,5 @@ class DocumentParser:
         print(f"Element breakdown: {dict(element_types)}")
         
         return elements
+    
+    
