@@ -91,6 +91,24 @@ class ApiService {
     return response.json();
   }
 
+  // NEW: Delete a project
+  async deleteProject(projectId: string): Promise<{ success: boolean; message: string }> {
+    const encodedProjectId = encodeURIComponent(projectId);
+    const response = await fetch(`${API_BASE_URL}/projects/${encodedProjectId}`, {
+      method: 'DELETE',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      throw new Error(errorData.detail || `Failed to delete project: ${response.statusText}`);
+    }
+
+    return response.json();
+  }
+
   // UPDATED: Now requires project_id
   async uploadPDF(file: File, settings: ProcessSettings, projectId: string) {
     console.log('=== Upload Debug ===');

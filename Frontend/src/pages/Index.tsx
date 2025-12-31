@@ -2,9 +2,9 @@ import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card } from "@/components/ui/card";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
-import { Plus, Folder, Clock, FileText, Sparkles, Loader2 } from "lucide-react";
+import { Plus, Folder, Clock, FileText, Sparkles, Loader2, X, AlertTriangle } from "lucide-react";
 import { Link } from "react-router-dom";
 import { HelpButton } from "@/components/Help/HelpButton";
 import { HelpOverlay } from "@/components/Help/HelpOverlay";
@@ -18,6 +18,10 @@ const Index = () => {
   const [projects, setProjects] = useState<Project[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isCreating, setIsCreating] = useState(false);
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [projectToDelete, setProjectToDelete] = useState<Project | null>(null);
+  const [deleteConfirmName, setDeleteConfirmName] = useState("");
+  const [isDeleting, setIsDeleting] = useState(false);
 
   // Load projects from API on mount
   useEffect(() => {
@@ -61,6 +65,38 @@ const Index = () => {
       toast.error('Failed to create project');
     } finally {
       setIsCreating(false);
+    }
+  };
+
+  const handleDeleteClick = (e: React.MouseEvent, project: Project) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setProjectToDelete(project);
+    setDeleteConfirmName("");
+    setDeleteDialogOpen(true);
+  };
+
+  const handleDeleteProject = async () => {
+    if (!projectToDelete || deleteConfirmName !== projectToDelete.project_id) return;
+
+    setIsDeleting(true);
+    try {
+      await apiService.deleteProject(projectToDelete.project_id);
+      setProjects(prev => prev.filter(p => p.project_id !== projectToDelete.project_id));
+      toast.success(`Project "${projectToDelete.project_id}" deleted successfully`);
+      setDeleteDialogOpen(false);
+      setProjectToDelete(null);
+      setDeleteConfirmName("");
+    } catch (error) {
+      console.error('Failed to delete project:', error);
+      const errorMessage = error instanceof Error ? error.message : 'Failed to delete project';
+      if (errorMessage.includes('Failed to fetch')) {
+        toast.error('Cannot connect to backend server. Make sure it is running on localhost:8000');
+      } else {
+        toast.error(errorMessage);
+      }
+    } finally {
+      setIsDeleting(false);
     }
   };
 
@@ -148,7 +184,14 @@ const Index = () => {
                     to={`/project/${project.project_id}`}
                     onClick={() => localStorage.setItem('currentProjectId', project.project_id)}
                   >
-                    <Card className="p-6 bg-card/50 backdrop-blur-sm border-border/50 hover:border-primary/50 transition-all duration-300 hover:scale-105 cursor-pointer group">
+                    <Card className="p-6 bg-card/50 backdrop-blur-sm border-border/50 hover:border-primary/50 transition-all duration-300 hover:scale-105 cursor-pointer group relative">
+                      <button
+                        onClick={(e) => handleDeleteClick(e, project)}
+                        className="absolute top-3 right-3 p-1.5 rounded-full bg-destructive/10 hover:bg-destructive/20 text-destructive opacity-0 group-hover:opacity-100 transition-opacity"
+                        title="Delete project"
+                      >
+                        <X className="w-4 h-4" />
+                      </button>
                       <div className="flex items-start justify-between mb-4">
                         <div className="p-3 rounded-lg bg-primary/10 group-hover:bg-primary/20 transition-colors">
                           <Folder className="w-6 h-6 text-primary" />
@@ -177,6 +220,57 @@ const Index = () => {
           </div>
         </div>
       </div>
+
+      {/* Delete Confirmation Dialog */}
+      <Dialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
+        <DialogContent className="bg-card border-border">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-destructive">
+              <AlertTriangle className="w-5 h-5" />
+              Delete Project
+            </DialogTitle>
+            <DialogDescription>
+              This action cannot be undone. This will permanently delete the project
+              <span className="font-semibold text-foreground"> {projectToDelete?.project_id}</span> and all its data.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <Label htmlFor="delete-confirm">
+                Type <span className="font-mono font-semibold text-foreground">{projectToDelete?.project_id}</span> to confirm
+              </Label>
+              <Input
+                id="delete-confirm"
+                placeholder="Enter project name"
+                value={deleteConfirmName}
+                onChange={(e) => setDeleteConfirmName(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && deleteConfirmName === projectToDelete?.project_id && handleDeleteProject()}
+                disabled={isDeleting}
+                className="font-mono"
+              />
+            </div>
+          </div>
+          <DialogFooter className="gap-2">
+            <Button variant="outline" onClick={() => setDeleteDialogOpen(false)} disabled={isDeleting}>
+              Cancel
+            </Button>
+            <Button 
+              variant="destructive" 
+              onClick={handleDeleteProject}
+              disabled={deleteConfirmName !== projectToDelete?.project_id || isDeleting}
+            >
+              {isDeleting ? (
+                <>
+                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                  Deleting...
+                </>
+              ) : (
+                'Delete Project'
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <HelpButton onClick={() => setIsHelpOpen(true)} />
       {isHelpOpen && <HelpOverlay onClose={() => setIsHelpOpen(false)} />}
