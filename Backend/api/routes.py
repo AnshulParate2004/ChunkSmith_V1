@@ -166,25 +166,124 @@ async def get_project_details(project_id: str):
 
 @router.delete("/projects/{project_id}")
 async def delete_project(project_id: str):
-    """Delete an entire project and all its data"""
+    """Delete an entire project and all its data (FORCEFUL)"""
+    import gc
+    import stat
+    
+    def force_remove_readonly(func, path, exc_info):
+        """
+        Error handler for Windows readonly files
+        Changes permissions and retries deletion
+        """
+        if not os.access(path, os.W_OK):
+            # Change file to be writable
+            os.chmod(path, stat.S_IWUSR | stat.S_IREAD)
+            func(path)
+        else:
+            raise
+    
     try:
         project_dir = settings.get_project_dir(project_id)
         
         if not project_dir.exists():
             raise HTTPException(status_code=404, detail=f"Project '{project_id}' not found")
         
-        # Delete the entire project directory
-        shutil.rmtree(project_dir)
+        # STEP 1: Close ALL active chat sessions (not just this project)
+        # Sometimes ChromaDB shares resources across sessions
+        print(f"Closing ALL {len(chat_agents)} active chat session(s)...")
+        all_sessions = list(chat_agents.keys())
+        for session_id in all_sessions:
+            try:
+                agent = chat_agents[session_id]
+                # Close vectorstore connection
+                if hasattr(agent, 'vectorstore') and agent.vectorstore is not None:
+                    try:
+                        # Try to explicitly close ChromaDB client
+                        if hasattr(agent.vectorstore, '_client'):
+                            agent.vectorstore._client = None
+                        agent.vectorstore = None
+                    except:
+                        pass
+                del chat_agents[session_id]
+                print(f"  ✓ Closed session: {session_id}")
+            except Exception as e:
+                print(f"  ⚠ Error closing {session_id}: {e}")
         
-        return {
-            "success": True,
-            "message": f"Project '{project_id}' deleted successfully",
-            "project_id": project_id
-        }
+        # STEP 2: Aggressive garbage collection
+        print("Running aggressive garbage collection...")
+        gc.collect()
+        gc.collect()  # Run twice for good measure
+        await asyncio.sleep(1)  # Give Windows more time
+        
+        # STEP 3: Try forceful deletion with multiple strategies
+        deleted = False
+        
+        # Strategy 1: Normal deletion with readonly handler
+        try:
+            print("Attempting deletion with readonly handler...")
+            shutil.rmtree(project_dir, onerror=force_remove_readonly)
+            deleted = True
+            print("✓ Successfully deleted with Strategy 1")
+        except Exception as e1:
+            print(f"✗ Strategy 1 failed: {e1}")
+            
+            # Strategy 2: Rename then delete (Windows trick)
+            try:
+                print("Attempting rename-then-delete strategy...")
+                temp_name = f"{project_dir.parent / f'_DELETE_ME_{project_id}_{datetime.now().strftime("%Y%m%d_%H%M%S")}'}"
+                os.rename(str(project_dir), temp_name)
+                await asyncio.sleep(0.5)
+                shutil.rmtree(temp_name, onerror=force_remove_readonly)
+                deleted = True
+                print("✓ Successfully deleted with Strategy 2")
+            except Exception as e2:
+                print(f"✗ Strategy 2 failed: {e2}")
+                
+                # Strategy 3: Mark for deletion on next startup
+                try:
+                    print("Attempting mark-for-deletion strategy...")
+                    # Create a marker file
+                    marker_file = project_dir / ".DELETE_ON_STARTUP"
+                    marker_file.write_text(f"Marked for deletion at {datetime.now()}")
+                    
+                    # Try one more time with maximum wait
+                    gc.collect()
+                    await asyncio.sleep(2)
+                    shutil.rmtree(project_dir, onerror=force_remove_readonly)
+                    deleted = True
+                    print("✓ Successfully deleted with Strategy 3")
+                except Exception as e3:
+                    print(f"✗ All strategies failed!")
+                    
+                    # Return partial success message
+                    raise HTTPException(
+                        status_code=207,  # Multi-Status
+                        detail={
+                            "status": "partial",
+                            "message": f"Could not delete '{project_id}' - files are locked. The project has been marked for deletion. Please restart the server or try again in a moment.",
+                            "project_id": project_id,
+                            "closed_sessions": len(all_sessions),
+                            "errors": {
+                                "strategy1": str(e1)[:100],
+                                "strategy2": str(e2)[:100],
+                                "strategy3": str(e3)[:100]
+                            },
+                            "suggestion": "Restart the FastAPI server to release all locks, then delete again."
+                        }
+                    )
+        
+        if deleted:
+            return {
+                "success": True,
+                "message": f"Project '{project_id}' forcefully deleted",
+                "project_id": project_id,
+                "closed_sessions": len(all_sessions)
+            }
     
     except HTTPException:
         raise
     except Exception as e:
+        print(f"Unexpected error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 
@@ -950,6 +1049,45 @@ async def download_project_documents_only(project_id: str):
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to create archive: {str(e)}")
+
+
+@router.post("/force-unlock")
+async def force_unlock_all():
+    """
+    Force close ALL chat sessions and run garbage collection
+    Use this before deleting projects if they're locked
+    """
+    import gc
+    
+    try:
+        session_count = len(chat_agents)
+        
+        # Close all chat sessions
+        all_sessions = list(chat_agents.keys())
+        for session_id in all_sessions:
+            try:
+                agent = chat_agents[session_id]
+                if hasattr(agent, 'vectorstore') and agent.vectorstore is not None:
+                    if hasattr(agent.vectorstore, '_client'):
+                        agent.vectorstore._client = None
+                    agent.vectorstore = None
+                del chat_agents[session_id]
+            except:
+                pass
+        
+        # Aggressive garbage collection
+        gc.collect()
+        gc.collect()
+        
+        await asyncio.sleep(0.5)
+        
+        return {
+            "success": True,
+            "message": f"Closed {session_count} session(s) and released locks",
+            "closed_sessions": session_count
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @router.get("/health")
