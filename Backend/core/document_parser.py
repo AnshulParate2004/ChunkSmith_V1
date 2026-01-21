@@ -1,8 +1,10 @@
-"""Document parsing module using unstructured library"""
+"""Document parsing module using Unstructured API"""
 import os
 from pathlib import Path
 from typing import List
-from unstructured.partition.pdf import partition_pdf
+from unstructured_client import UnstructuredClient
+from unstructured_client.models import operations, shared
+from unstructured.staging.base import elements_from_dicts
 
 
 # Supported OCR languages mapping
@@ -35,11 +37,16 @@ SUPPORTED_LANGUAGES = {
 
 
 class DocumentParser:
-    """Handles PDF document parsing and chunking"""
+    """Handles PDF document parsing and chunking using Unstructured API"""
     
-    def __init__(self, image_output_dir: str):
+    def __init__(self, image_output_dir: str, api_key: str = None):
         self.image_output_dir = image_output_dir
         Path(image_output_dir).mkdir(parents=True, exist_ok=True)
+        
+        # Load API key from environment if not provided
+        self.api_key = api_key or os.getenv("UNSTRUCTURED_API_KEY")
+        if not self.api_key:
+            raise ValueError("UNSTRUCTURED_API_KEY not found in environment")
     
     @staticmethod
     def get_supported_languages() -> dict:
@@ -84,10 +91,11 @@ class DocumentParser:
         combine_text_under_n_chars: int,
         extract_images: bool = True,
         extract_tables: bool = True,
-        languages: List[str] = ['english']
+        languages: List[str] = ['english'],
+        split_pdf_concurrency_level: int = 1
     ):
         """
-        Extract elements from PDF using unstructured library.
+        Extract elements from PDF using Unstructured API.
         
         Args:
             file_path: Path to the PDF file
@@ -97,6 +105,7 @@ class DocumentParser:
             extract_images: Whether to extract images
             extract_tables: Whether to infer table structure
             languages: List of language names or codes (e.g., ['english', 'hindi'] or ['eng', 'hin'])
+            split_pdf_concurrency_level: Concurrency level for PDF page splitting
         
         Returns:
             List of extracted elements
@@ -105,37 +114,39 @@ class DocumentParser:
         if not os.path.exists(file_path):
             raise FileNotFoundError(f"PDF file not found: {file_path}")
         
-        # Validate chunk parameters
-        if max_characters >= new_after_n_chars:
-            raise ValueError("max_characters must be less than new_after_n_chars")
-        
-        # Convert language names to codes
-        language_codes = self.get_language_codes(languages)
-        
         print(f"Partitioning document: {file_path}")
-        print(f"Settings: Images={extract_images}, Tables={extract_tables}, Languages={language_codes}")
-        print(f"Chunk settings: max={max_characters}, new_after={new_after_n_chars}, combine={combine_text_under_n_chars}")
-
-        elements = partition_pdf(
-            filename=file_path,
-            strategy="hi_res",
-            hi_res_model_name="yolox",
-            chunking_strategy="by_title",
-            include_orig_elements=True,
-            split_pdf_page=True,
-            split_pdf_concurrency_level=15,
-            languages=language_codes,
-            extract_images_in_pdf=extract_images,
-            extract_image_block_to_payload=extract_images,
-            extract_image_block_output_dir=self.image_output_dir if extract_images else None,
-            extract_image_block_types=["Image"] if extract_images else [],
-            infer_table_structure=extract_tables,
-            max_characters=max_characters,
-            new_after_n_chars=new_after_n_chars,
-            combine_text_under_n_chars=combine_text_under_n_chars,
+        print(f"File size: {os.path.getsize(file_path):,} bytes")
+        print(f"Settings: split_pdf_concurrency_level={split_pdf_concurrency_level}")
+        
+        # Initialize Unstructured API client
+        client = UnstructuredClient(api_key_auth=self.api_key)
+        
+        # Read PDF file
+        with open(file_path, "rb") as f:
+            files = shared.Files(
+                content=f.read(),
+                file_name=os.path.basename(file_path),
+            )
+        
+        # Create partition request
+        request = operations.PartitionRequest(
+            
+            partition_parameters=shared.PartitionParameters(
+                files=files,
+                num_processes=10,
+                partition_by_api=False,
+                split_pdf_page=True,
+                split_pdf_allow_failed=True,
+                split_pdf_concurrency_level=split_pdf_concurrency_level,
+                extract_image_block_types=["Image", "Table"],
+            )
         )
         
-        print(f"Extracted {len(elements)} elements")
+        print("Partitioning PDF with Unstructured API...")
+        result = client.general.partition(request=request)
+        elements = elements_from_dicts(result.elements)
+        
+        print(f"✓ Partitioning complete: {len(elements)} elements")
         
         # Print element breakdown
         element_types = {}

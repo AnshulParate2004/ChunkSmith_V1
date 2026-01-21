@@ -28,32 +28,6 @@ else:
 load_dotenv()
 
 # -------------------------------
-# Cleanup Function for Marked Deletions
-# -------------------------------
-def cleanup_marked_projects():
-    """Delete projects that were marked for deletion"""
-    import shutil
-    data_dir = settings.DATA_DIR
-    if not data_dir.exists():
-        return
-    
-    deleted_count = 0
-    for project_dir in data_dir.iterdir():
-        if project_dir.is_dir():
-            marker_file = project_dir / ".DELETE_ON_STARTUP"
-            if marker_file.exists():
-                try:
-                    print(f"🗑️  Cleaning up marked project: {project_dir.name}")
-                    shutil.rmtree(project_dir)
-                    deleted_count += 1
-                    print(f"  ✓ Deleted: {project_dir.name}")
-                except Exception as e:
-                    print(f"  ✗ Could not delete {project_dir.name}: {e}")
-    
-    if deleted_count > 0:
-        print(f"✓ Startup cleanup: Removed {deleted_count} marked project(s)")
-
-# -------------------------------
 # Initialize FastAPI App
 # -------------------------------
 app = FastAPI(
@@ -61,12 +35,6 @@ app = FastAPI(
     version=settings.API_VERSION,
     description="Multimodal RAG API for PDF processing with AI-enhanced summaries and vector search"
 )
-
-# Run cleanup on startup
-@app.on_event("startup")
-async def startup_event():
-    """Run cleanup tasks on startup"""
-    cleanup_marked_projects()
 
 # -------------------------------
 # CORS Middleware

@@ -85,9 +85,8 @@ class ContentProcessor:
             google_api_key=api_key
         )
         return llm.with_structured_output(AIParser)
-    
-    # REMOVED: No longer cleaning directories - projects are now isolated
-    
+
+
     def separate_content_types(self, chunk, image_counter: dict) -> Dict:
         """
         Analyze chunk content and extract text, tables, and images.
@@ -272,7 +271,7 @@ TEXT CONTENT:
             api_key_index = i % len(self.api_keys)
             api_key = self.api_keys[api_key_index]
             
-            task = self.create_ai_enhanced_summary_async(
+            task = self. create_ai_enhanced_summary_async(
                 text=chunk_data['text'],
                 tables=chunk_data['tables'],
                 images=chunk_data['image_base64'],

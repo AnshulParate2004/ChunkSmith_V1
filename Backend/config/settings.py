@@ -15,6 +15,7 @@ class Settings(BaseSettings):
     EXTRACT_IMAGES: bool = True
     EXTRACT_TABLES: bool = True
     LANGUAGES: list = ["eng"]
+    SPLIT_PDF_CONCURRENCY_LEVEL: int = 15  # Concurrency level for PDF splitting
     
     # AI Model settings
     GEMINI_MODEL: str = "gemini-2.5-pro"
@@ -26,13 +27,14 @@ class Settings(BaseSettings):
     API_VERSION: str = "1.0.0"
     ALLOWED_EXTENSIONS: set = {".pdf"}
     MAX_FILE_SIZE: int = 50 * 1024 * 1024  # 50 MB
+    UNSTRUCTURED_API_KEY: str = ""  # Unstructured API key (loaded from env)
     
     class Config:
         env_file = ".env"
         case_sensitive = True
         extra = "allow"
     
-    def __init__(self, **kwargs):
+    def __init__(self, **kwargs ):#/* any argument can be passed */
         super().__init__(**kwargs)
         # Create base data directory
         self.DATA_DIR.mkdir(parents=True, exist_ok=True)
