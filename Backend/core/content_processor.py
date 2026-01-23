@@ -3,7 +3,7 @@ import os
 import base64
 import asyncio
 from pathlib import Path
-from typing import List, Dict
+from typing import List, Dict, Optional
 from langchain_core.documents import Document
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_core.messages import HumanMessage
@@ -164,7 +164,7 @@ class ContentProcessor:
         images: List[str],
         api_key: str,
         chunk_index: int
-    ) -> AIParser:
+    ) -> Optional[AIParser]:
         """
         Create AI-enhanced summary asynchronously with specific API key
         
@@ -176,7 +176,7 @@ class ContentProcessor:
             chunk_index: Index of chunk for logging
         
         Returns:
-            AIParser object with structured summary
+            AIParser object with structured summary, or None if failed (fallback to raw chunk)
         """
         
         try:
@@ -236,24 +236,11 @@ TEXT CONTENT:
             return response
                 
         except Exception as e:
-            # Return fallback on any error
-            print(f"Chunk {chunk_index}: Error - {str(e)[:100]}")
-            print(f"Chunk {chunk_index}: Using fallback summary")
-            
-            fallback_summary = f"[FALLBACK_SUMMARY]..."
-            if tables:
-                fallback_summary += f"\n[Contains {len(tables)} table(s)]"
-            if images:
-                fallback_summary += f"\n[Contains {len(images)} image(s)]"
-            
-            return AIParser(
-                question="Unable to generate questions due to processing error",
-                summary=fallback_summary,
-                image_interpretation=["***IMAGE SUMMARY FAILED***" for _ in images] if images else [],
-                table_interpretation=["***TABLE SUMMARY FAILED***" for _ in tables] if tables else []
-            )
+            # On failure, return None to use raw chunk (no error messages)
+            print(f"Chunk {chunk_index}: AI summary failed, using raw chunk data")
+            return None
     
-    async def process_chunks_async(self, chunks_data: List[Dict]) -> List[AIParser]:
+    async def process_chunks_async(self, chunks_data: List[Dict]) -> List[Optional[AIParser]]:
         """
         Process multiple chunks asynchronously using different API keys
         
@@ -261,7 +248,7 @@ TEXT CONTENT:
             chunks_data: List of dictionaries containing chunk data
             
         Returns:
-            List of AIParser responses
+            List of AIParser responses (or None if failed, to use raw chunk)
         """
         tasks = []
         
@@ -360,46 +347,65 @@ TEXT CONTENT:
         langchain_documents = []
         
         for idx, (content_data, ai_response) in enumerate(zip(chunks_data, ai_responses), 1):
-            # Create combined searchable content
-            # Prepare image analysis text as string with image path and interpretation
-            # For images
-            img_analysis_text = "\n".join(
-                [f"Image Path {content_data['images_dirpath'][i]} : {ai_response.image_interpretation[i]}" 
-                for i in range(len(ai_response.image_interpretation))]
-            ) if ai_response.image_interpretation else "No images present"
+            # If AI summary failed (None), use raw chunk data only
+            if ai_response is None:
+                # Create document with just raw data (no AI fields)
+                combined_content = content_data['text']
+                
+                print(f"Document {idx}: Using raw chunk data (AI summary failed)")
+                
+                doc = Document(
+                    page_content=combined_content,
+                    metadata={
+                        "chunk_index": idx,
+                        "original_text": content_data['text'],
+                        "raw_tables_html": content_data['tables'],
+                        "image_paths": content_data['images_dirpath'],
+                        "image_base64": content_data['image_base64'],
+                        "page_numbers": content_data['page_no'],
+                        "content_types": content_data['types'],
+                    }
+                )
+            else:
+                # Create combined searchable content with AI summary
+                # Prepare image analysis text as string with image path and interpretation
+                # For images
+                img_analysis_text = "\n".join(
+                    [f"Image Path {content_data['images_dirpath'][i]} : {ai_response.image_interpretation[i]}" 
+                    for i in range(len(ai_response.image_interpretation))]
+                ) if ai_response.image_interpretation else "No images present"
 
-            # For tables
-            table_analysis_text = "\n".join(
-                [f"Table index {i} : {ai_response.table_interpretation[i]}"
-                for i in range(len(ai_response.table_interpretation))]
-            ) if ai_response.table_interpretation else "No tables present"
+                # For tables
+                table_analysis_text = "\n".join(
+                    [f"Table index {i} : {ai_response.table_interpretation[i]}"
+                    for i in range(len(ai_response.table_interpretation))]
+                ) if ai_response.table_interpretation else "No tables present"
 
-
-            combined_content = f"""QUESTIONS: {ai_response.question}
+                combined_content = f"""QUESTIONS: {ai_response.question}
 SUMMARY: {ai_response.summary}
 IMAGE ANALYSIS: {img_analysis_text}
 TABLE ANALYSIS: {table_analysis_text}
 ORIGINAL TEXT: {content_data['text']}"""
-            
-            print(f"Document {i}: {ai_response.summary[:100]}...")
-            
-            # Create LangChain Document with metadata
-            doc = Document(
-                page_content=combined_content,
-                metadata={
-                    "chunk_index": idx,
-                    "original_text": content_data['text'],
-                    "raw_tables_html": content_data['tables'],
-                    "ai_questions": ai_response.question,
-                    "ai_summary": ai_response.summary,
-                    "image_interpretation": ai_response.image_interpretation,
-                    "table_interpretation": ai_response.table_interpretation,
-                    "image_paths": content_data['images_dirpath'],
-                    "image_base64": content_data['image_base64'],
-                    "page_numbers": content_data['page_no'],
-                    "content_types": content_data['types'],
-                }
-            )
+                
+                print(f"Document {idx}: {ai_response.summary[:100]}...")
+                
+                # Create LangChain Document with metadata including AI fields
+                doc = Document(
+                    page_content=combined_content,
+                    metadata={
+                        "chunk_index": idx,
+                        "original_text": content_data['text'],
+                        "raw_tables_html": content_data['tables'],
+                        "ai_questions": ai_response.question,
+                        "ai_summary": ai_response.summary,
+                        "image_interpretation": ai_response.image_interpretation,
+                        "table_interpretation": ai_response.table_interpretation,
+                        "image_paths": content_data['images_dirpath'],
+                        "image_base64": content_data['image_base64'],
+                        "page_numbers": content_data['page_no'],
+                        "content_types": content_data['types'],
+                    }
+                )
             
             langchain_documents.append(doc)
         
