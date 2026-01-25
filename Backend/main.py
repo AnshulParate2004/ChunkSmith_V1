@@ -1,26 +1,12 @@
-"""
-FastAPI Main Application
-Run with: uvicorn main:app --reload --host 0.0.0.0 --port 8000
-"""
-
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from api.routes import router
 from config.settings import settings
 from dotenv import load_dotenv
-import pytesseract
 import platform
 import os
 
-# -------------------------------
-# Configure Tesseract Path (Windows / Docker Linux)
-# -------------------------------
-if platform.system() == "Windows":
-    # Windows local machine
-    pytesseract.pytesseract.tesseract_cmd = r"C:\Program Files\Tesseract-OCR\tesseract.exe"
-else:
-    # Docker/Linux: tesseract installed at /usr/bin/tesseract
-    pytesseract.pytesseract.tesseract_cmd = "tesseract"
+
 
 # -------------------------------
 # Load .env (works on Windows, Linux, Docker)
