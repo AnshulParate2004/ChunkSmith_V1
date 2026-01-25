@@ -1,0 +1,27 @@
+version: '3.8'
+
+services:
+  backend:
+    image: anshulnp/chunksmith-app:backend
+    container_name: chunksmith-backend
+    ports:
+      - "8000:8000"
+    volumes:
+      - chunksmith_data:/app/data
+    # env_file:
+    #   - Backend/.env
+    environment:
+      - PYTHONUNBUFFERED=1
+    restart: always
+
+  frontend:
+    image: anshulnp/chunksmith-app:frontend
+    container_name: chunksmith-frontend
+    ports:
+      - "80:80"
+    depends_on:
+      - backend
+    restart: always
+
+volumes:
+  chunksmith_data:

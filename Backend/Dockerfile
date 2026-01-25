@@ -16,7 +16,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 RUN pip install --no-cache-dir uv
 
 # Copy dependency files
-COPY pyproject.toml uv.lock* ./
+COPY Backend/pyproject.toml Backend/uv.lock* ./
 
 # Install Python dependencies
 RUN uv pip install --system --no-cache -r pyproject.toml \
