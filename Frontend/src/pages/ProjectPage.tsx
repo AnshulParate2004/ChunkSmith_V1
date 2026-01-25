@@ -41,7 +41,7 @@ const ProjectPage = () => {
   const [selectedDoc, setSelectedDoc] = useState<UploadedDoc | null>(null);
   const [isDetailsOpen, setIsDetailsOpen] = useState(false);
   const [activeChatDoc, setActiveChatDoc] = useState<string | null>(null);
-  
+
   const [settings, setSettings] = useState<ProcessSettings>({
     languages: 'english',
     extractImages: true,
@@ -93,10 +93,10 @@ const ProjectPage = () => {
     const interval = setInterval(loadDocuments, 1000);
     return () => clearInterval(interval);
   }, [projectId]);
-  
+
   const projectTitle = projectId || 'Project';
 
-  const filteredDocs = uploadedDocs.filter(doc => 
+  const filteredDocs = uploadedDocs.filter(doc =>
     doc.name.toLowerCase().includes(searchQuery.toLowerCase())
   );
 
@@ -211,12 +211,12 @@ const ProjectPage = () => {
             <Sparkles className="w-6 h-6 text-primary" />
             <h1 className="text-xl font-bold gradient-text">ChunkSmith</h1>
           </div>
-          
+
           <div className="flex items-center justify-between mb-4">
             <h3 className="text-sm font-semibold text-muted-foreground">Documents</h3>
             <span className="text-xs text-muted-foreground">{uploadedDocs.length}</span>
           </div>
-          
+
           {uploadedDocs.length > 0 && (
             <div className="relative mb-4">
               <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-muted-foreground" />
@@ -236,7 +236,7 @@ const ProjectPage = () => {
               )}
             </div>
           )}
-          
+
           <div className="space-y-2">
             {uploadedDocs.length === 0 ? (
               <p className="text-xs text-muted-foreground text-center py-4">
@@ -309,7 +309,7 @@ const ProjectPage = () => {
                     <Button
                       variant="ghost"
                       size="icon"
-                      onClick={() => navigate('/')}
+                      onClick={() => navigate('/dashboard')}
                     >
                       <ArrowLeft className="w-5 h-5" />
                     </Button>
@@ -387,7 +387,7 @@ const ProjectPage = () => {
               <TabsContent value="documents" className="space-y-6 mt-6">
                 <div>
                   <h4 className="text-sm font-semibold mb-4">Add Sources</h4>
-                  
+
                   <FileUpload
                     onFileSelect={handleFileSelect}
                     selectedFile={selectedFile}
@@ -396,21 +396,21 @@ const ProjectPage = () => {
 
                   {selectedFile && (
                     <div className="mt-4">
-                      <UploadSettings 
-                        settings={settings} 
+                      <UploadSettings
+                        settings={settings}
                         onSettingsChange={(newSettings) => {
                           console.log('⚙️ UploadSettings callback - New settings:', newSettings);
                           setSettings(newSettings);
-                        }} 
+                        }}
                       />
-                      
+
                       {settings.languages && (
                         <div className="mt-3 p-3 bg-primary/10 rounded-lg border border-primary/20">
                           <p className="text-xs text-muted-foreground">Selected language:</p>
                           <p className="text-sm font-medium text-primary">{settings.languages}</p>
                         </div>
                       )}
-                      
+
                       {!settings.languages && (
                         <div className="mt-3 p-3 bg-yellow-500/10 rounded-lg border border-yellow-500/20">
                           <p className="text-xs text-yellow-600 dark:text-yellow-400">
@@ -418,8 +418,8 @@ const ProjectPage = () => {
                           </p>
                         </div>
                       )}
-                      
-                      <Button 
+
+                      <Button
                         onClick={handleUpload}
                         disabled={isUploading || !settings.languages}
                         className="w-full mt-4"
@@ -448,8 +448,8 @@ const ProjectPage = () => {
                   <div className="space-y-2">
                     <div className="relative">
                       <Globe className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-                      <Input 
-                        placeholder="Paste website URL" 
+                      <Input
+                        placeholder="Paste website URL"
                         className="pl-10 bg-background/50"
                       />
                     </div>
@@ -465,7 +465,7 @@ const ProjectPage = () => {
                     <h4 className="text-sm font-semibold">Sources</h4>
                     <span className="text-xs text-muted-foreground">{uploadedDocs.length}</span>
                   </div>
-                  
+
                   {uploadedDocs.length === 0 ? (
                     <p className="text-xs text-muted-foreground text-center py-8">
                       No sources added yet
@@ -473,7 +473,7 @@ const ProjectPage = () => {
                   ) : (
                     <div className="space-y-2">
                       {uploadedDocs.map((doc, index) => (
-                        <div 
+                        <div
                           key={`source-${doc.documentId}-${index}`}
                           onClick={() => handleDocClick(doc)}
                           className="glass-card p-3 text-sm cursor-pointer hover:bg-muted/50 transition-colors"
@@ -507,7 +507,7 @@ const ProjectPage = () => {
           <DialogHeader>
             <DialogTitle>Document Details</DialogTitle>
           </DialogHeader>
-          
+
           {selectedDoc && (
             <div className="space-y-4">
               <div className="flex items-start gap-3">
@@ -539,7 +539,7 @@ const ProjectPage = () => {
               </div>
 
               {selectedDoc.status === 'complete' && (
-                <Button 
+                <Button
                   onClick={() => {
                     navigate(`/processing/${selectedDoc.documentId}`);
                     setIsDetailsOpen(false);
