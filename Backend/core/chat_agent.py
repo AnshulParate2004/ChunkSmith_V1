@@ -15,7 +15,7 @@ from pathlib import Path
 from typing import List, Dict, AsyncGenerator, Optional
 from langchain_core.messages import HumanMessage, AIMessage, SystemMessage
 from langchain_google_genai import ChatGoogleGenerativeAI
-from core.vector_store import VectorStoreManager
+from utils.vector_store import VectorStoreManager
 from config.settings import settings
 from dotenv import load_dotenv
 from pydantic import BaseModel, Field

@@ -15,7 +15,7 @@ import pickle
 from config.settings import settings
 from core.document_parser import DocumentParser
 from core.content_processor import ContentProcessor
-from core.vector_store import VectorStoreManager
+from utils.vector_store import VectorStoreManager
 from utils.file_helpers import FileHandler
 from core.chat_agent import ChatAgent
 from utils.storage import StorageManager
