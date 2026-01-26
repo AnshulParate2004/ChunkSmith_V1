@@ -1,37 +1,56 @@
--- Enable the pgvector extension to work with embedding vectors
-create extension if not exists vector;
+-- Enable UUID extension
+create extension if not exists "uuid-ossp";
 
--- Create a table to store your documents
-create table if not exists documents (
-  id bigserial primary key,
-  content text, -- corresponds to Document.page_content
-  metadata jsonb, -- corresponds to Document.metadata
-  embedding vector(768) -- 768 dimensions for Gemini Embeddings (001/004)
+-- Conversations Table
+create table if not exists conversations (
+  id uuid default uuid_generate_v4() primary key,
+  user_id uuid references auth.users(id) not null,
+  project_id text not null,
+  title text,
+  created_at timestamp with time zone default now() not null,
+  updated_at timestamp with time zone default now() not null
 );
 
--- Create a function to search for documents
-create or replace function match_documents (
-  query_embedding vector(768),
-  match_threshold float,
-  match_count int,
-  filter jsonb default '{}'
-) returns table (
-  id bigint,
-  content text,
-  metadata jsonb,
-  similarity float
-) language plpgsql stable as $$
-begin
-  return query
-  select
-    documents.id,
-    documents.content,
-    documents.metadata,
-    1 - (documents.embedding <=> query_embedding) as similarity
-  from documents
-  where 1 - (documents.embedding <=> query_embedding) > match_threshold
-  and documents.metadata @> filter
-  order by documents.embedding <=> query_embedding
-  limit match_count;
-end;
-$$;
+-- Messages Table
+create table if not exists messages (
+  id uuid default uuid_generate_v4() primary key,
+  conversation_id uuid references conversations(id) on delete cascade not null,
+  role text not null check (role in ('user', 'assistant')),
+  content text not null,
+  created_at timestamp with time zone default now() not null
+);
+
+-- RLS Policies
+alter table conversations enable row level security;
+
+create policy "Users can view their own conversations" on conversations
+  for select using (auth.uid() = user_id);
+
+create policy "Users can insert their own conversations" on conversations
+  for insert with check (auth.uid() = user_id);
+
+create policy "Users can update their own conversations" on conversations
+  for update using (auth.uid() = user_id);
+
+create policy "Users can delete their own conversations" on conversations
+  for delete using (auth.uid() = user_id);
+
+alter table messages enable row level security;
+
+create policy "Users can view messages in their conversations" on messages
+  for select using (
+    exists (
+      select 1 from conversations
+      where conversations.id = messages.conversation_id
+      and conversations.user_id = auth.uid()
+    )
+  );
+
+create policy "Users can insert messages in their conversations" on messages
+  for insert with check (
+    exists (
+      select 1 from conversations
+      where conversations.id = messages.conversation_id
+      and conversations.user_id = auth.uid()
+    )
+  );

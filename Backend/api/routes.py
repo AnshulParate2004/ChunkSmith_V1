@@ -3,7 +3,8 @@ import shutil
 import json
 import asyncio
 from datetime import datetime
-from fastapi import APIRouter, UploadFile, File, HTTPException, BackgroundTasks, Query
+from api.deps import get_current_user, get_supabase_client
+from fastapi import APIRouter, UploadFile, File, HTTPException, BackgroundTasks, Query, Depends
 from fastapi.responses import FileResponse, StreamingResponse
 from pydantic import BaseModel
 from typing import Optional, List, AsyncGenerator
@@ -22,7 +23,8 @@ from utils.storage import StorageManager
 from typing import Dict
 from unstructured.chunking.title import chunk_by_title
 
-# Store active chat agents
+# Store active chat agents (Project Level Cache)
+# Key: project_id
 chat_agents: Dict[str, ChatAgent] = {}
 router = APIRouter()
 
@@ -708,52 +710,140 @@ async def process_pdf_background(
 # CHAT ENDPOINTS (PROJECT-BASED)
 # ============================================
 
-@router.post("/chat/init/{project_id}")
-async def initialize_chat(project_id: str):
-    """Initialize chat session for a project"""
+# ============================================
+# CHAT ENDPOINTS (PERSISTENT & AUTHENTICATED)
+# ============================================
+
+class CreateConversationRequest(BaseModel):
+    project_id: str
+    title: str = "New Conversation"
+
+@router.post("/chat/conversations")
+async def create_conversation(
+    request: CreateConversationRequest,
+    user = Depends(get_current_user)
+):
+    """Create a new conversation"""
     try:
-        # Create chat agent with project-specific paths
-        # We don't check for local chroma file anymore
+        supabase = get_supabase_client()
         
-        chat_agent = ChatAgent(
-            project_id=project_id,
-           # chroma_dir and image_dirs are passed but chat_agent will need update to not require chroma paths
-            chroma_dir=None, 
-            image_dir=str(settings.get_project_image_dir(project_id))
-        )
-        session_id = f"{project_id}_{len(chat_agents)}"
-        chat_agents[session_id] = chat_agent
+        # Insert into conversations table
+        response = supabase.table("conversations").insert({
+            "user_id": user.id,
+            "project_id": request.project_id,
+            "title": request.title
+        }).execute()
         
+        if not response.data:
+            raise HTTPException(status_code=500, detail="Failed to create conversation")
+            
         return {
             "success": True,
-            "session_id": session_id, 
-            "project_id": project_id,
-            "message": "Chat session initialized successfully"
+            "conversation": response.data[0]
         }
-    
-    except FileNotFoundError as e:
-        raise HTTPException(status_code=404, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+@router.get("/chat/conversations")
+async def list_conversations(
+    project_id: Optional[str] = None,
+    user = Depends(get_current_user)
+):
+    """List user's conversations, optionally filtered by project"""
+    try:
+        supabase = get_supabase_client()
+        
+        query = supabase.table("conversations").select("*").eq("user_id", user.id).order("updated_at", desc=True)
+        
+        if project_id:
+            query = query.eq("project_id", project_id)
+            
+        response = query.execute()
+        
+        return {
+            "success": True,
+            "count": len(response.data),
+            "conversations": response.data
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
-@router.get("/chat/stream/{session_id}")
-async def chat_stream(session_id: str, message: str):
-    """Stream chat responses via SSE"""
+@router.get("/chat/conversations/{conversation_id}/messages")
+async def get_conversation_history(
+    conversation_id: str,
+    user = Depends(get_current_user)
+):
+    """Get history for a specific conversation"""
+    try:
+        supabase = get_supabase_client()
+        
+        # Verify ownership
+        conv = supabase.table("conversations").select("id").eq("id", conversation_id).eq("user_id", user.id).execute()
+        if not conv.data:
+            raise HTTPException(status_code=404, detail="Conversation not found")
+            
+        # Fetch messages
+        response = supabase.table("messages").select("*").eq("conversation_id", conversation_id).order("created_at", desc=False).execute()
+        
+        return {
+            "success": True,
+            "messages": response.data
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.post("/chat/conversations/{conversation_id}/message_stream")
+async def stream_chat_message(
+    conversation_id: str,
+    message: str = Query(..., description="User message"),
+    token: str = Query(..., description="Auth token (since EventSource cannot send headers easily)"),
+    # Access token retrieval manually since streaming endpoint usually uses query param for auth
+):
+    """Stream chat response for a conversation"""
     
-    if session_id not in chat_agents:
-        raise HTTPException(
-            status_code=404,
-            detail="Chat session not found. Initialize chat first using /chat/init/{project_id}"
-        )
-    
+    # Manually validate token for stream
+    try:
+        supabase = get_supabase_client()
+        user_response = supabase.auth.get_user(token)
+        if not user_response or not user_response.user:
+             raise HTTPException(status_code=401, detail="Invalid token")
+        user = user_response.user
+    except Exception as e:
+        raise HTTPException(status_code=401, detail="Authentication failed")
+
+    # Verify conversation ownership and get project_id
+    try:
+        conv_response = supabase.table("conversations").select("project_id").eq("id", conversation_id).eq("user_id", user.id).execute()
+        if not conv_response.data:
+             raise HTTPException(status_code=404, detail="Conversation not found")
+        project_id = conv_response.data[0]["project_id"]
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Database error: {e}")
+
     async def event_generator() -> AsyncGenerator[str, None]:
         try:
-            chat_agent = chat_agents[session_id]
+            # Instantiate ChatAgent on the fly or get from cache
+            # Since history is DB-backed, we can re-instantiate cheaply
+            # Note: We might want to cache the VectorStore connection (heavy part)
+            
+            # Use cached agent if implementation exists for project, otherwise create
+            # We key by project_id because VectorStore is per-project
+            if project_id not in chat_agents:
+                 chat_agents[project_id] = ChatAgent(project_id=project_id) # Base agent for DB connection
+            
+            # Create a lightweight agent instance just for this conversation
+            # OR better: use the cached agent but pass conversation_id context
+            # But ChatAgent architecture was updated to accept conversation_id in init
+            
+            # Let's instantiate a fresh one for now to ensure correct conversation context
+            # Optimization: Re-use vector store from cached agent if available
+            agent = ChatAgent(project_id=project_id, conversation_id=conversation_id, user_id=user.id)
             
             yield f"data: {json.dumps({'type': 'connected', 'message': 'Connected to chat stream'})}\n\n"
             
-            async for event in chat_agent.chat_stream(message):
+            async for event in agent.chat_stream(message):
                 event_type = event["type"]
                 event_data = event["data"]
                 
@@ -766,8 +856,6 @@ async def chat_stream(session_id: str, message: str):
             
             yield f"data: {json.dumps({'type': 'end'})}\n\n"
             
-        except asyncio.CancelledError:
-            pass
         except Exception as e:
             error_message = str(e).replace('"', '\\"').replace("\n", " ")
             yield f"data: {json.dumps({'type': 'error', 'message': error_message})}\n\n"
@@ -784,56 +872,24 @@ async def chat_stream(session_id: str, message: str):
         }
     )
 
-
-@router.post("/chat/clear/{session_id}")
-async def clear_chat_history(session_id: str):
-    """Clear conversation history for a chat session"""
-    if session_id not in chat_agents:
-        raise HTTPException(status_code=404, detail="Chat session not found")
-    
+@router.delete("/chat/conversations/{conversation_id}")
+async def delete_conversation(
+    conversation_id: str,
+    user = Depends(get_current_user)
+):
+    """Delete a conversation"""
     try:
-        chat_agents[session_id].clear_history()
+        supabase = get_supabase_client()
+        # RLS will handle permission check, but good to be explicit
+        response = supabase.table("conversations").delete().eq("id", conversation_id).eq("user_id", user.id).execute()
+        
         return {
             "success": True,
-            "message": "Chat history cleared successfully"
+            "message": "Conversation deleted"
         }
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+         raise HTTPException(status_code=500, detail=str(e))
 
-
-@router.delete("/chat/session/{session_id}")
-async def delete_chat_session(session_id: str):
-    """Delete a chat session"""
-    if session_id not in chat_agents:
-        raise HTTPException(status_code=404, detail="Chat session not found")
-    
-    try:
-        del chat_agents[session_id]
-        return {
-            "success": True,
-            "message": "Chat session deleted successfully"
-        }
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-@router.get("/chat/sessions")
-async def list_chat_sessions():
-    """List all active chat sessions"""
-    sessions = [
-        {
-            "session_id": session_id,
-            "project_id": agent.project_id,
-            "history_length": len(agent.conversation_history)
-        }
-        for session_id, agent in chat_agents.items()
-    ]
-    
-    return {
-        "success": True,
-        "count": len(sessions),
-        "sessions": sessions
-    }
 
 
 # ============================================
