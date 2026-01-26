@@ -225,10 +225,15 @@ class ApiService {
     return response.json();
   }
 
-  async downloadDocument(documentId: string) {
-    const response = await fetch(`${API_BASE_URL}/documents?document_id=${documentId}`, {
+  async downloadDocument(documentId: string, projectId: string) {
+    const response = await fetch(`${API_BASE_URL}/documents?document_id=${documentId}&project_id=${projectId}`, {
       headers: this.getAuthHeaders()
     });
+
+    if (!response.ok) {
+      throw new Error(`Download failed: ${response.statusText}`);
+    }
+
     const blob = await response.blob();
 
     const url = window.URL.createObjectURL(blob);

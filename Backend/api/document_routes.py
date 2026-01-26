@@ -4,6 +4,7 @@ import json
 import asyncio
 import tempfile
 import shutil
+import zipfile
 from datetime import datetime
 from typing import AsyncGenerator, Dict
 from pathlib import Path
@@ -19,6 +20,101 @@ from api.shared import processing_status, send_sse_message
 from api.auth_routes import get_current_user
 
 router = APIRouter(tags=["Document Processing"])
+
+
+@router.get("/documents")
+async def download_document(
+    document_id: str = Query(...),
+    project_id: str = Query(...),
+    user = Depends(get_current_user)
+):
+    """Download specific document processing results as ZIP with images"""
+    try:
+        storage_mgr = StorageManager()
+        
+        # 1. Fetch JSON Data
+        json_path = f"{project_id}/json/{document_id}_processed.json"
+        try:
+            json_bytes = storage_mgr.download_file(json_path, settings.SUPABASE_DATA_BUCKET_NAME)
+        except Exception:
+             try:
+                 json_path = f"json/{document_id}_processed.json"
+                 json_bytes = storage_mgr.download_file(json_path, settings.SUPABASE_DATA_BUCKET_NAME)
+             except:
+                 raise HTTPException(status_code=404, detail="Document data not found")
+
+        # 2. Parse JSON to find associated images
+        try:
+            data = json.loads(json_bytes.decode('utf-8'))
+            image_filenames = set()
+            
+            # Helper to extract paths
+            def extract_from_chunk(chunk):
+                # Check image_paths list
+                if 'image_paths' in chunk:
+                    paths = chunk['image_paths']
+                    if isinstance(paths, str):
+                        try: paths = json.loads(paths)
+                        except: paths = []
+                    if isinstance(paths, list):
+                        for p in paths:
+                            if p:
+                                image_filenames.add(Path(p).name)
+                
+                # Check metadata (legacy)
+                if 'metadata' in chunk:
+                    meta = chunk['metadata']
+                    if 'image_paths' in meta:
+                        paths = meta['image_paths']
+                        if isinstance(paths, str):
+                            try: paths = json.loads(paths)
+                            except: paths = []
+                        if isinstance(paths, list):
+                            for p in paths:
+                                if p:
+                                    image_filenames.add(Path(p).name)
+
+            if isinstance(data, list):
+                for chunk in data:
+                    extract_from_chunk(chunk)
+            elif isinstance(data, dict):
+                 # Handle single object wrap if ever used
+                 extract_from_chunk(data)
+                 
+        except Exception as e:
+            print(f"Error parsing JSON for images: {e}")
+            image_filenames = set()
+
+        # 3. Create ZIP with structure
+        temp_zip = tempfile.NamedTemporaryFile(delete=False, suffix='.zip')
+        with zipfile.ZipFile(temp_zip.name, 'w', zipfile.ZIP_DEFLATED) as zipf:
+            # Add JSON to json/ folder
+            zipf.writestr(f"json/{document_id}.json", json_bytes)
+            
+            # Add Images to images/ folder
+            if image_filenames:
+                for img_name in image_filenames:
+                    try:
+                        # Try to download image from project images bucket
+                        # Path: {project_id}/images/{img_name}
+                        img_path = f"{project_id}/images/{img_name}"
+                        img_bytes = storage_mgr.download_file(img_path, settings.SUPABASE_BUCKET_NAME) # images bucket
+                        zipf.writestr(f"images/{img_name}", img_bytes)
+                    except Exception as e:
+                        print(f"Could not download image {img_name}: {e}")
+                        # Continue without this image
+            
+        return FileResponse(
+            path=temp_zip.name,
+            filename=f"{document_id}_package.zip",
+            media_type="application/zip",
+            headers={"Content-Disposition": f"attachment; filename={document_id}_package.zip"}
+        )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 # ============================================

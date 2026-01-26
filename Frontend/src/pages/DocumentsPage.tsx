@@ -27,7 +27,12 @@ const DocumentsPage = () => {
 
   const handleDownload = async (documentId: string) => {
     try {
-      await apiService.downloadDocument(documentId);
+      const projectId = localStorage.getItem('currentProjectId');
+      if (!projectId) {
+        toast.error('No project context found');
+        return;
+      }
+      await apiService.downloadDocument(documentId, projectId);
       toast.success('Download started');
     } catch (error) {
       toast.error('Download failed');

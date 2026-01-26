@@ -132,7 +132,12 @@ const ProcessingPage = () => {
   const handleDownload = async () => {
     try {
       if (documentId) {
-        await apiService.downloadDocument(documentId);
+        const projectId = localStorage.getItem('currentProjectId');
+        if (projectId) {
+          await apiService.downloadDocument(documentId, projectId);
+        } else {
+          toast.error("Project Context missing");
+        }
       } else {
         const projectId = localStorage.getItem('currentProjectId');
         if (projectId) {
