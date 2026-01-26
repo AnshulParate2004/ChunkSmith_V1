@@ -194,7 +194,7 @@ const ChatPage = () => {
     const encodedToken = encodeURIComponent(session.access_token);
 
     // Use new endpoint
-    const url = `http://localhost:8000/api/chat/conversations/${targetConversationId}/message_stream?message=${encodedMessage}&token=${encodedToken}`;
+    const url = `https://chunksmith.onrender.com/api/chat/conversations/${targetConversationId}/message_stream?message=${encodedMessage}&token=${encodedToken}`;
 
     const eventSource = new EventSource(url);
     eventSourceRef.current = eventSource;
