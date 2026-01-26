@@ -8,6 +8,7 @@ from langchain_core.documents import Document
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_core.messages import HumanMessage
 from pydantic import BaseModel, Field
+from utils.storage import StorageManager
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -23,10 +24,12 @@ class AIParser(BaseModel):
 class ContentProcessor:
     """Processes document chunks with AI-enhanced summaries using multiple API keys"""
     
-    def __init__(self, image_dir: str, model_name: str = "gemini-2.5-pro", temperature: float = 0):
+    def __init__(self, image_dir: str, model_name: str = "gemini-2.5-pro", temperature: float = 0, project_id: str = None):
         self.image_dir = image_dir
         self.model_name = model_name
         self.temperature = temperature
+        self.project_id = project_id
+
 
         # Load all available API keys from environment
         self.api_keys = self._load_api_keys()
@@ -135,21 +138,39 @@ class ContentProcessor:
                     try:
                         # Generate filename and path
                         image_filename = f"image_{image_counter['count']:04d}.png"
-                        image_path = os.path.join(self.image_dir, image_filename)
+                        
+                        # Upload to Supabase 
+                        try:
+                            if self.project_id:
+                                storage_path = f"{self.project_id}/images/{image_filename}"
+                            else:
+                                # Fallback to previous logic (path based)
+                                # Try to extract project_id/images/filename structure
+                                path_parts = Path(self.image_dir).parts
+                                if 'data' in path_parts:
+                                    idx = path_parts.index('data')
+                                    project_subpath = "/".join(path_parts[idx+1:])
+                                    storage_path = f"{project_subpath}/{image_filename}"
+                                else:
+                                    # Fallback
+                                    storage_path = f"images/{image_filename}"
+                        except:
+                             storage_path = f"images/{image_filename}"
 
-                        # Decode and save image
-                        with open(image_path, "wb") as img_file:
-                            img_file.write(base64.b64decode(image_base64))
+                        storage_mgr = StorageManager()
+                        public_url = storage_mgr.upload_bytes(
+                            base64.b64decode(image_base64),
+                            storage_path,
+                            "image/png"
+                        )
 
-                        # Store relative path
-                        folder_name = os.path.basename(self.image_dir.rstrip(os.sep))
-                        relative_path = os.path.join(folder_name, image_filename).replace("\\", "/")
-                        content_data['images_dirpath'].append(relative_path)
+                        # Store public URL in place of relative path
+                        content_data['images_dirpath'].append(public_url)
 
                         # Keep base64 for AI processing
                         content_data['image_base64'].append(image_base64)
 
-                        print(f"Saved: {relative_path}")
+                        print(f"Uploaded: {public_url}")
                         image_counter['count'] += 1
 
                     except Exception as e:
@@ -349,11 +370,18 @@ TEXT CONTENT:
         for idx, (content_data, ai_response) in enumerate(zip(chunks_data, ai_responses), 1):
             # If AI summary failed (None), use raw chunk data only
             if ai_response is None:
-                # Create document with just raw data (no AI fields)
+                # Create document with raw data AND fallback AI fields to ensure schema consistency
                 combined_content = content_data['text']
                 
                 print(f"Document {idx}: Using raw chunk data (AI summary failed)")
                 
+                # Generate fallback interpretations for images/tables if they exist
+                fallback_image_interp = ["***IMAGE SUMMARY FAILED***"] * len(content_data['image_base64'])
+                fallback_table_interp = ["***TABLE SUMMARY FAILED***"] * len(content_data['tables'])
+                
+                img_count = len(content_data['image_base64'])
+                fallback_summary = f"[FALLBACK_SUMMARY]...\n[Contains {img_count} image(s)]" if img_count > 0 else "[FALLBACK_SUMMARY]..."
+
                 doc = Document(
                     page_content=combined_content,
                     metadata={
@@ -364,6 +392,11 @@ TEXT CONTENT:
                         "image_base64": content_data['image_base64'],
                         "page_numbers": content_data['page_no'],
                         "content_types": content_data['types'],
+                        # Fallback AI fields
+                        "ai_questions": "Unable to generate questions due to processing error",
+                        "ai_summary": fallback_summary,
+                        "image_interpretation": fallback_image_interp,
+                        "table_interpretation": fallback_table_interp
                     }
                 )
             else:

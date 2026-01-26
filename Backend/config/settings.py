@@ -19,7 +19,7 @@ class Settings(BaseSettings):
     
     # AI Model settings
     GEMINI_MODEL: str = "gemini-2.5-pro"
-    EMBEDDING_MODEL: str = "models/gemini-embedding-001"
+    EMBEDDING_MODEL: str = "models/text-embedding-004"
     TEMPERATURE: float = 0.0
     
     # API settings
@@ -28,6 +28,19 @@ class Settings(BaseSettings):
     ALLOWED_EXTENSIONS: set = {".pdf"}
     MAX_FILE_SIZE: int = 50 * 1024 * 1024  # 50 MB
     UNSTRUCTURED_API_KEY: str = ""  # Unstructured API key (loaded from env)
+
+    # Qdrant Settings
+    QDRANT_URL: str = ""
+    QDRANT_API_KEY: str = ""
+
+    # Supabase Settings
+    SUPABASE_URL: str = ""
+    SUPABASE_KEY: str = ""
+    SUPABASE_BUCKET_NAME: str = "chunk_images"
+    SUPABASE_DATA_BUCKET_NAME: str = "chunk_data"
+    SUPABASE_PDF_BUCKET_NAME: str = "chunk_pdf"
+    SUPABASE_PKL_BUCKET_NAME: str = "chunk_pkl"
+    SUPABASE_VECTOR_TABLE: str = "documents"
     
     class Config:
         env_file = ".env"
@@ -36,8 +49,8 @@ class Settings(BaseSettings):
     
     def __init__(self, **kwargs ):#/* any argument can be passed */
         super().__init__(**kwargs)
-        # Create base data directory
-        self.DATA_DIR.mkdir(parents=True, exist_ok=True)
+        # Create base data directory - STOPPED
+        # self.DATA_DIR.mkdir(parents=True, exist_ok=True)
     
     def get_project_dir(self, project_id: str) -> Path:
         """Get project-specific directory"""
@@ -46,31 +59,31 @@ class Settings(BaseSettings):
     def get_project_upload_dir(self, project_id: str) -> Path:
         """Get project-specific upload directory"""
         path = self.get_project_dir(project_id) / "uploads"
-        path.mkdir(parents=True, exist_ok=True)
+        # path.mkdir(parents=True, exist_ok=True)
         return path
     
     def get_project_image_dir(self, project_id: str) -> Path:
         """Get project-specific image directory"""
         path = self.get_project_dir(project_id) / "images"
-        path.mkdir(parents=True, exist_ok=True)
+        # path.mkdir(parents=True, exist_ok=True)
         return path
     
     def get_project_pickle_dir(self, project_id: str) -> Path:
         """Get project-specific pickle directory"""
         path = self.get_project_dir(project_id) / "pickle"
-        path.mkdir(parents=True, exist_ok=True)
+        # path.mkdir(parents=True, exist_ok=True)
         return path
     
     def get_project_json_dir(self, project_id: str) -> Path:
         """Get project-specific JSON directory"""
         path = self.get_project_dir(project_id) / "json"
-        path.mkdir(parents=True, exist_ok=True)
+        # path.mkdir(parents=True, exist_ok=True)
         return path
     
     def get_project_chroma_dir(self, project_id: str) -> Path:
         """Get project-specific ChromaDB directory"""
         path = self.get_project_dir(project_id) / "chroma_db"
-        path.mkdir(parents=True, exist_ok=True)
+        # path.mkdir(parents=True, exist_ok=True)
         return path
     
     def list_projects(self) -> list:

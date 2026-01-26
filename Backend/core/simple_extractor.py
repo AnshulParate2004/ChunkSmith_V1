@@ -12,6 +12,7 @@ from unstructured.chunking.title import chunk_by_title
 
 from core.document_parser import DocumentParser
 from config.settings import settings
+from utils.storage import StorageManager
 from dotenv import load_dotenv
 
 # Optional AI imports
@@ -119,21 +120,31 @@ class SimpleExtractor:
                     try:
                         # Generate filename and path
                         image_filename = f"image_{image_counter['count']:04d}.png"
-                        image_path = self.image_dir / image_filename
-
-                        # Decode and save image
-                        with open(image_path, "wb") as img_file:
-                            img_file.write(base64.b64decode(image_base64))
-
-                        # Store relative path (folder name + filename)
+                        
+                        # Upload to Supabase
+                        # Use the folder name from image_dir as part of the path
                         folder_name = self.image_dir.name
-                        relative_path = f"{folder_name}/{image_filename}"
-                        content_data['images_dirpath'].append(relative_path)
+                        # Assuming image_dir is like .../project_id/images, we want project_id/images/filename
+                        # Or just use the folder name provided
+                        
+                        # Try to get project_id from the path if possible, or just use folder_name
+                        # simpler: use the full path relative to data dir if possible, or just folder_name/filename
+                        storage_path = f"{folder_name}/{image_filename}"
+                        
+                        storage_mgr = StorageManager()
+                        public_url = storage_mgr.upload_bytes(
+                            base64.b64decode(image_base64),
+                            storage_path,
+                            "image/png"
+                        )
+
+                        # Store public URL as relative path (for compatibility)
+                        content_data['images_dirpath'].append(public_url)
 
                         # Keep base64 for storage
                         content_data['image_base64'].append(image_base64)
 
-                        print(f"Saved: {relative_path}")
+                        print(f"Uploaded: {public_url}")
                         image_counter['count'] += 1
 
                     except Exception as e:
@@ -418,27 +429,50 @@ TEXT CONTENT:
     
     def save_output(self, data: List[Dict], output_dir: str, filename_base: str):
         """
-        Save extracted data to JSON and Pickle files
+        Save extracted data to Supabase (JSON and Pickle)
         
         Args:
             data: List of extracted chunk data
-            output_dir: Directory to save output files
-            filename_base: Base filename (without extension)
+            output_dir: Used as folder prefix for Supabase path
+            filename_base: Base filename
         """
-        output_path = Path(output_dir)
-        output_path.mkdir(parents=True, exist_ok=True)
+        # Determine storage path
+        # If output_dir is absolute path, try to make it relative or just use filename
+        # Simpler: just use filename_base as folder or prefix
+        # We will use: output_dir (last folder name) / filename
         
-        # Save JSON
-        json_path = output_path / f"{filename_base}.json"
-        with open(json_path, "w", encoding="utf-8") as f:
-            json.dump(data, f, indent=4, ensure_ascii=False)
-        print(f"[OK] Saved JSON: {json_path}")
-        
-        # Save Pickle
-        pickle_path = output_path / f"{filename_base}.pkl"
-        with open(pickle_path, "wb") as f:
-            pickle.dump(data, f)
-        print(f"[OK] Saved Pickle: {pickle_path}")
+        try:
+            folder_name = Path(output_dir).name
+            storage_mgr = StorageManager()
+            
+            # 1. Save JSON (DATA Bucket)
+            json_content = json.dumps(data, indent=4, ensure_ascii=False).encode('utf-8')
+            json_path = f"{folder_name}/{filename_base}.json"
+            
+            storage_mgr.upload_data(
+                json_content, 
+                json_path, 
+                "application/json",
+                bucket_name=settings.SUPABASE_DATA_BUCKET_NAME
+            )
+            print(f"[OK] Uploaded JSON to Supabase '{settings.SUPABASE_DATA_BUCKET_NAME}': {json_path}")
+            
+            # 2. Save Pickle (PKL Bucket)
+            pickle_content = pickle.dumps(data)
+            pickle_path = f"{folder_name}/{filename_base}.pkl"
+            
+            storage_mgr.upload_data(
+                pickle_content, 
+                pickle_path, 
+                "application/octet-stream",
+                bucket_name=settings.SUPABASE_PKL_BUCKET_NAME
+            )
+            print(f"[OK] Uploaded Pickle to Supabase '{settings.SUPABASE_PKL_BUCKET_NAME}': {pickle_path}")
+            
+        except Exception as e:
+            print(f"Error saving to Supabase: {e}")
+            # Fallback to local if needed, but for migration we want to force Supabase
+            pass
 
 
 def main():

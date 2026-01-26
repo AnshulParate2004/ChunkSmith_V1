@@ -62,20 +62,14 @@ class ChatAgent:
         ).with_structured_output(ChatResponse)
         
         # Set paths
-        if chroma_dir is None:
-            chroma_dir = str(settings.get_project_chroma_dir(project_id))
         if image_dir is None:
             image_dir = str(settings.get_project_image_dir(project_id))
         
         self.image_dir = image_dir
         
-        # Load vector store
-        if not os.path.exists(chroma_dir):
-            raise FileNotFoundError(f"Vector store not found for project: {project_id}")
-        
+        # Load vector store (Supabase)
         self.vector_manager = VectorStoreManager(embedding_model=settings.EMBEDDING_MODEL)
         self.vectorstore = self.vector_manager.load_vector_store(
-            persist_directory=chroma_dir,
             collection_name=project_id
         )
         

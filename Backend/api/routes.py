@@ -7,8 +7,10 @@ from fastapi import APIRouter, UploadFile, File, HTTPException, BackgroundTasks,
 from fastapi.responses import FileResponse, StreamingResponse
 from pydantic import BaseModel
 from typing import Optional, List, AsyncGenerator
+from pathlib import Path
 import zipfile
 import tempfile
+import pickle
 
 from config.settings import settings
 from core.document_parser import DocumentParser
@@ -16,6 +18,7 @@ from core.content_processor import ContentProcessor
 from core.vector_store import VectorStoreManager
 from utils.file_helpers import FileHandler
 from core.chat_agent import ChatAgent
+from utils.storage import StorageManager
 from typing import Dict
 from unstructured.chunking.title import chunk_by_title
 
@@ -66,29 +69,19 @@ async def send_sse_message(message_type: str, data: dict) -> str:
 
 @router.post("/projects")
 async def create_project(request: ProjectCreateRequest):
-    """Create a new project"""
+    """Create a new project (Virtual/Supabase-backed)"""
     try:
         # Sanitize project name
         project_id = request.project_name.replace(" ", "_").replace("/", "_").replace("\\", "_")
         
-        # Create project directory structure
-        project_dir = settings.get_project_dir(project_id)
-        
-        if project_dir.exists():
-            raise HTTPException(status_code=400, detail=f"Project '{project_id}' already exists")
-        
-        # Create all subdirectories
-        settings.get_project_upload_dir(project_id) # pdf 
-        settings.get_project_image_dir(project_id)
-        settings.get_project_pickle_dir(project_id)
-        settings.get_project_json_dir(project_id)
-        settings.get_project_chroma_dir(project_id)
+        # We no longer create local directories. 
+        # Ideally we would check/create in Supabase, but for now we just acknowledge the ID.
         
         return {
             "success": True,
-            "message": "Project created successfully",
+            "message": "Project initialized (virtual)",
             "project_id": project_id,
-            "project_path": str(project_dir)
+            "storage_path": f"{project_id}/"
         }
     
     except HTTPException:
@@ -99,9 +92,30 @@ async def create_project(request: ProjectCreateRequest):
 
 @router.get("/projects")
 async def list_projects():
-    """List all projects"""
+    """List all projects (from Supabase)"""
     try:
-        projects = settings.list_projects()
+        storage_mgr = StorageManager()
+        # List root of pdf bucket to find project folders
+        items = storage_mgr.list_bucket_contents(settings.SUPABASE_PDF_BUCKET_NAME)
+        
+        projects = []
+        # Support for both dictionary and object return types from supabase-py
+        for item in items:
+            name = item.get('name') if isinstance(item, dict) else getattr(item, 'name', None)
+            created_at = item.get('created_at') if isinstance(item, dict) else getattr(item, 'created_at', datetime.now().isoformat())
+            
+            # Filter out obvious non-folders if possible, or just treat root items as projects
+            if name and not name.startswith('.'): 
+                # Count files in this project
+                project_files = storage_mgr.list_bucket_contents(settings.SUPABASE_PDF_BUCKET_NAME, path=f"{name}/")
+                file_count = len(project_files) if project_files else 0
+                
+                projects.append({
+                    "project_id": name,
+                    "project_path": f"supabase://{name}",
+                    "file_count": file_count, 
+                    "created_at": created_at
+                })
         
         return {
             "success": True,
@@ -115,70 +129,104 @@ async def list_projects():
 
 @router.get("/projects/{project_id}")
 async def get_project_details(project_id: str):
-    """Get detailed information about a project"""
+    """Get detailed information about a project (from Supabase)"""
     try:
-        project_dir = settings.get_project_dir(project_id)
+        storage_mgr = StorageManager()
         
-        if not project_dir.exists():
-            raise HTTPException(status_code=404, detail=f"Project '{project_id}' not found")
+        # Fetch PDFs from Supabase
+        pdf_items = storage_mgr.list_bucket_contents(
+            settings.SUPABASE_PDF_BUCKET_NAME, 
+            path=f"{project_id}/"
+        )
         
-        # Get file counts
-        upload_dir = settings.get_project_upload_dir(project_id)
-        image_dir = settings.get_project_image_dir(project_id)
+        # Fetch Images from Supabase (Correct path: project_id/images/)
+        image_items = storage_mgr.list_bucket_contents(
+            settings.SUPABASE_BUCKET_NAME, 
+            path=f"{project_id}/images/"
+        )
         
-        pdf_files = list(upload_dir.glob("*.pdf"))
-        image_files = list(image_dir.glob("*"))
-        
-        # Get vector store info
-        chroma_dir = settings.get_project_chroma_dir(project_id)
-        
-        has_vector_store = (chroma_dir / project_id).exists()
+        pdf_files = []
+        if isinstance(pdf_items, list):
+            for item in pdf_items:
+                name = item.get('name') if isinstance(item, dict) else getattr(item, 'name', None)
+                metadata = item.get('metadata', {}) if isinstance(item, dict) else getattr(item, 'metadata', {})
+                created_at = item.get('created_at') if isinstance(item, dict) else getattr(item, 'created_at', None)
+                item_id = item.get('id') if isinstance(item, dict) else getattr(item, 'id', None)
+                
+                # Handle size which might be in metadata or direct attribute
+                size = metadata.get('size', 0)
+                
+                if name and not name.startswith('.'):
+                    pdf_files.append({
+                        "filename": name, 
+                        "size_mb": round(float(size) / (1024*1024), 2),
+                        "created_at": created_at,
+                        "id": item_id
+                    })
+
+        # Filter out folder placeholders if any (items ending in / or empty names)
+        # Supabase list sometimes returns the folder itself as an item?
+        real_images = [img for img in (image_items or []) if (img.get('name') if isinstance(img, dict) else getattr(img, 'name', '')).lower().endswith(('.png', '.jpg', '.jpeg'))]
+        image_count = len(real_images)
+
+        # Get vector store info and exact count
         doc_count = 0
-        
-        if has_vector_store:
-            try:
-                vector_manager = VectorStoreManager(embedding_model=settings.EMBEDDING_MODEL)
-                vectorstore = vector_manager.load_vector_store(
-                    persist_directory=str(chroma_dir),
-                    collection_name=project_id
-                )
-                collection = vectorstore._collection
-                doc_count = collection.count()
-            except:
-                pass
+        has_vector_store = False
+        try:
+           vector_manager = VectorStoreManager(embedding_model=settings.EMBEDDING_MODEL)
+           doc_count = vector_manager.get_project_document_count(project_id)
+           has_vector_store = doc_count > 0
+        except Exception as ve:
+           print(f"Vector count error: {ve}")
         
         return {
             "success": True,
             "project_id": project_id,
-            "project_path": str(project_dir),
-            "pdf_files": [{"filename": f.name, "size_mb": round(f.stat().st_size / (1024*1024), 2)} for f in pdf_files],
+            "project_path": f"supabase://{project_id}",
+            "pdf_files": pdf_files,
             "pdf_count": len(pdf_files),
-            "image_count": len(image_files),
+            "image_count": image_count,
             "has_vector_store": has_vector_store,
             "chunks_in_db": doc_count
         }
     
-    except HTTPException:
-        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
 
 @router.delete("/projects/{project_id}")
 async def delete_project(project_id: str):
-    """Delete an entire project and all its data"""
+    """Delete an entire project and all its data (Supabase + Local)"""
     try:
+        # 1. Supabase Storage Cleanup
+        storage_mgr = StorageManager()
+        # List of buckets to clean (PDF, Images, JSON, Pickle)
+        buckets = [
+            settings.SUPABASE_PDF_BUCKET_NAME,
+            settings.SUPABASE_BUCKET_NAME,      # chunk_images
+            settings.SUPABASE_DATA_BUCKET_NAME, # chunk_data
+            settings.SUPABASE_PKL_BUCKET_NAME
+        ]
+        
+        for bucket in buckets:
+            # Delete all files with project prefix
+            storage_mgr.delete_folder(bucket, f"{project_id}/")
+            
+        # 2. Supabase Vector Cleanup
+        try:
+            vector_manager = VectorStoreManager(embedding_model=settings.EMBEDDING_MODEL)
+            vector_manager.delete_project_vectors(project_id)
+        except Exception as ve:
+             print(f"Vector cleanup error: {ve}")
+
+        # 3. Local Cleanup (Virtual check)
         project_dir = settings.get_project_dir(project_id)
-        
-        if not project_dir.exists():
-            raise HTTPException(status_code=404, detail=f"Project '{project_id}' not found")
-        
-        # Delete the entire project directory
-        shutil.rmtree(project_dir)
+        if project_dir.exists():
+            shutil.rmtree(project_dir)
         
         return {
             "success": True,
-            "message": f"Project '{project_id}' deleted successfully",
+            "message": f"Project '{project_id}' deleted successfully (Cloud & Local data removed)",
             "project_id": project_id
         }
     
@@ -205,29 +253,26 @@ async def initiate_pdf_processing(
     languages: str = "english",
 ):
     """
-    Process PDF and add to project (APPENDS data, does not delete existing)
+    Process PDF and add to project (Supabase-only storage)
     """
     try:
-        # Verify project exists
-        project_dir = settings.get_project_dir(project_id)
-        if not project_dir.exists():
-            raise HTTPException(
-                status_code=404, 
-                detail=f"Project '{project_id}' not found. Create it first using POST /api/projects"
-            )
+        # Verify project exists - Virtual check
+        # We don't error if it doesn't exist locally since we are cloud-only
         
         # Generate unique document ID
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         document_id = f"{file.filename.replace('.pdf', '')}_{timestamp}"
         
-        # Save uploaded file to project's upload directory
-        upload_dir = settings.get_project_upload_dir(project_id)
-        upload_path = os.path.join(upload_dir, f"{document_id}.pdf")
+        # Save uploaded file to a temporary file (auto-cleanup handled later)
+        # We use delete=False so we can pass the path to the background task
+        # The background task will delete it upon completion
+        temp_file = tempfile.NamedTemporaryFile(delete=False, suffix=".pdf")
+        upload_path = temp_file.name
         
-        with open(upload_path, "wb") as buffer:
-            content = await file.read()
-            buffer.write(content)
-        
+        content = await file.read()
+        temp_file.write(content)
+        temp_file.close() # Close handle so others can read
+            
         # Validate PDF
         is_valid, error_msg = FileHandler.validate_pdf(
             upload_path, 
@@ -236,6 +281,23 @@ async def initiate_pdf_processing(
         if not is_valid:
             os.remove(upload_path)
             raise HTTPException(status_code=400, detail=error_msg)
+        
+        # Upload PDF to Supabase PDF Bucket
+        try:
+            storage_mgr = StorageManager()
+            with open(upload_path, 'rb') as pdf_file:
+                pdf_content = pdf_file.read()
+                
+            storage_mgr.upload_data(
+                pdf_content, 
+                f"{project_id}/{document_id}.pdf", 
+                "application/pdf",
+                bucket_name=settings.SUPABASE_PDF_BUCKET_NAME
+            )
+            print(f"Uploaded PDF to Supabase: {document_id}.pdf")
+        except Exception as e:
+            print(f"Error uploading PDF to Supabase: {e}")
+            # Non-critical for processing, but good to know
         
         # Initialize status
         processing_status[document_id] = {
@@ -358,11 +420,16 @@ async def process_pdf_background(
     """Background task for PDF processing with project-based storage"""
     
     try:
-        # Get project-specific directories
-        image_dir = settings.get_project_image_dir(project_id)
-        pickle_dir = settings.get_project_pickle_dir(project_id)
-        json_dir = settings.get_project_json_dir(project_id)
-        chroma_dir = settings.get_project_chroma_dir(project_id)
+        # Create a temporary workspace for this task to ensure no local artifacts remain
+        temp_dir = tempfile.mkdtemp()
+        image_dir = Path(temp_dir) / "images"
+        pickle_dir = Path(temp_dir) / "pickle"
+        json_dir = Path(temp_dir) / "json"
+        chroma_dir = "supabase_vector_store" # No local chroma dir needed
+        
+        image_dir.mkdir(parents=True, exist_ok=True)
+        pickle_dir.mkdir(parents=True, exist_ok=True)
+        json_dir.mkdir(parents=True, exist_ok=True)
         
         # Update status: Starting
         processing_status[document_id] = {
@@ -467,7 +534,8 @@ async def process_pdf_background(
         processor = ContentProcessor(
             image_dir=str(image_dir),
             model_name=settings.GEMINI_MODEL,
-            temperature=settings.TEMPERATURE
+            temperature=settings.TEMPERATURE,
+            project_id=project_id
         )
         
         documents = await loop.run_in_executor(
@@ -478,11 +546,48 @@ async def process_pdf_background(
         
         image_count = len(list(image_dir.glob("*.png")))
         
-        output_pickle_path = os.path.join(pickle_dir, f"{document_id}_processed.pkl")
-        output_json_path = os.path.join(json_dir, f"{document_id}_processed.json")
+        output_pickle_path = f"pickle/{document_id}_processed.pkl"
+        output_json_path = f"json/{document_id}_processed.json"
         
-        FileHandler.save_pickle(documents, output_pickle_path)
-        FileHandler.save_json(documents, output_json_path)
+        # Upload to Supabase Data Bucket
+        # We use project_id as folder prefix for better organization if needed, but the paths above are standard
+        # Actually in settings we define project specific dirs, let's keep that structure in bucket
+        
+        # Save Pickle and JSON to Supabase with error handling
+        storage_mgr = StorageManager()
+        try:
+            print(f"DEBUG: Attempting to upload Pickle to bucket '{settings.SUPABASE_PKL_BUCKET_NAME}' at '{project_id}/{output_pickle_path}'")
+            storage_mgr.upload_data(
+                pickle.dumps(documents), 
+                f"{project_id}/{output_pickle_path}", 
+                "application/octet-stream",
+                bucket_name=settings.SUPABASE_PKL_BUCKET_NAME
+            )
+            print(f"SUCCESS: Uploaded Pickle to Supabase")
+        except Exception as e:
+            print(f"ERROR: Failed to upload Pickle to Supabase: {e}")
+            # Do not re-raise, allow processing to continue if possible?
+            # Actually, if pickle fails, we might still want to try JSON
+
+        try:
+            print(f"DEBUG: Attempting to upload JSON to bucket '{settings.SUPABASE_DATA_BUCKET_NAME}' at '{project_id}/{output_json_path}'")
+            
+            docs_dict = [
+                {
+                    "page_content": doc.page_content,
+                    "metadata": doc.metadata
+                } for doc in documents
+            ]
+            
+            storage_mgr.upload_data(
+                json.dumps(docs_dict, indent=4, ensure_ascii=False).encode('utf-8'), 
+                f"{project_id}/{output_json_path}", 
+                "application/json",
+                bucket_name=settings.SUPABASE_DATA_BUCKET_NAME
+            )
+            print(f"SUCCESS: Uploaded JSON to Supabase")
+        except Exception as e:
+            print(f"ERROR: Failed to upload JSON to Supabase: {e}")
         
         processing_status[document_id] = {
             "status": "processing",
@@ -502,18 +607,18 @@ async def process_pdf_background(
             "step": 4,
             "step_name": "vectorization",
             "progress": 75,
-            "message": "Step 4: Adding to vector database...",
+            "message": "Step 4: Adding to vector database (Supabase)...",
             "project_id": project_id
         }
         
         vector_manager = VectorStoreManager(embedding_model=settings.EMBEDDING_MODEL)
         
-        # Use append_to_vector_store instead of create_vector_store
+        # Use append_to_vector_store
         vectorstore = await loop.run_in_executor(
             None,
             vector_manager.append_to_vector_store,
             documents,
-            str(chroma_dir),
+            None, # persist_directory unused
             project_id
         )
         
@@ -527,6 +632,19 @@ async def process_pdf_background(
         }
         await asyncio.sleep(0.5)
         
+        # Cleanup local temporary files (PDF and Temp Directory)
+        try:
+            if os.path.exists(upload_path):
+                os.remove(upload_path)
+                print(f"Cleaned up local PDF: {upload_path}")
+            
+            if 'temp_dir' in locals() and os.path.exists(temp_dir):
+                shutil.rmtree(temp_dir)
+                print(f"Cleaned up temporary working directory: {temp_dir}")
+                
+        except Exception as cleanup_error:
+            print(f"Warning: Failed to cleanup local files: {cleanup_error}")
+
         # Complete
         processing_status[document_id] = {
             "status": "completed",
@@ -562,19 +680,13 @@ async def process_pdf_background(
 async def initialize_chat(project_id: str):
     """Initialize chat session for a project"""
     try:
-        # Check if project exists
-        chroma_dir = settings.get_project_chroma_dir(project_id)
-        chroma_db_file = chroma_dir / "chroma.sqlite3"
-        if not chroma_db_file.exists():
-            raise HTTPException(
-                status_code=404, 
-                detail=f"Project '{project_id}' not found or has no processed documents. ChromaDB not found at: {chroma_db_file}"
-            )
-        
         # Create chat agent with project-specific paths
+        # We don't check for local chroma file anymore
+        
         chat_agent = ChatAgent(
             project_id=project_id,
-            chroma_dir=str(chroma_dir),
+           # chroma_dir and image_dirs are passed but chat_agent will need update to not require chroma paths
+            chroma_dir=None, 
             image_dir=str(settings.get_project_image_dir(project_id))
         )
         session_id = f"{project_id}_{len(chat_agents)}"
@@ -582,7 +694,7 @@ async def initialize_chat(project_id: str):
         
         return {
             "success": True,
-            "session_id": session_id,
+            "session_id": session_id, 
             "project_id": project_id,
             "message": "Chat session initialized successfully"
         }
@@ -700,18 +812,11 @@ async def list_chat_sessions():
 async def search_documents(request: SearchRequest):
     """Search documents within a specific project"""
     try:
-        chroma_dir = settings.get_project_chroma_dir(request.project_id)
-        chroma_db_file = chroma_dir / "chroma.sqlite3"
-        
-        if not chroma_db_file.exists():
-            raise HTTPException(
-                status_code=404, 
-                detail=f"Project '{request.project_id}' not found or has no processed documents"
-            )
+        # chroma_dir check removed
         
         vector_manager = VectorStoreManager(embedding_model=settings.EMBEDDING_MODEL)
         vectorstore = vector_manager.load_vector_store(
-            persist_directory=str(chroma_dir),
+            persist_directory=None,
             collection_name=request.project_id
         )
         
@@ -752,27 +857,52 @@ async def view_processed_chunks(
         import base64
         from pathlib import Path
         
-        json_dir = settings.get_project_json_dir(project_id)
-        json_file_path = os.path.join(json_dir, f"{document_id}_processed.json")
+        # Download from Supabase (Primary Source) - No local file check
+        storage_mgr = StorageManager()
+        supabase_path = f"{project_id}/json/{document_id}_processed.json"
         
-        if not os.path.exists(json_file_path):
-            raise HTTPException(
-                status_code=404, 
-                detail=f"Processed chunks not found for document '{document_id}' in project '{project_id}'"
-            )
+        try:
+             json_bytes = storage_mgr.download_file(
+                 supabase_path, 
+                 bucket_name=settings.SUPABASE_DATA_BUCKET_NAME
+             )
+             chunks_data = json.loads(json_bytes.decode('utf-8'))
+             json_file_path = f"supabase://{settings.SUPABASE_DATA_BUCKET_NAME}/{supabase_path}"
         
-        with open(json_file_path, 'r', encoding='utf-8') as f:
-            chunks_data = json.load(f)
+        except Exception as e:
+             # Try fallback path without project_id prefix just in case
+             try:
+                fallback_path = f"json/{document_id}_processed.json"
+                json_bytes = storage_mgr.download_file(
+                    fallback_path, 
+                    bucket_name=settings.SUPABASE_DATA_BUCKET_NAME
+                )
+                chunks_data = json.loads(json_bytes.decode('utf-8'))
+                json_file_path = f"supabase://{settings.SUPABASE_DATA_BUCKET_NAME}/{fallback_path}"
+             except:
+                raise HTTPException(
+                    status_code=404, 
+                    detail=f"Processed chunks not found for document '{document_id}' in Supabase. Ensure processing is complete."
+                )
         
         # Process images if requested
         if include_images and isinstance(chunks_data, list):
-            image_dir = settings.get_project_image_dir(project_id)
+            image_dir = settings.get_project_image_dir(project_id) # still needed? No
             
             for chunk in chunks_data:
                 if 'image_paths' in chunk and chunk['image_paths']:
                     chunk['images_base64'] = []
                     
                     for image_path in chunk['image_paths']:
+                        # Check if it's a remote URL (Supabase)
+                        if image_path.startswith("http://") or image_path.startswith("https://"):
+                            chunk['images_base64'].append({
+                                'filename': Path(image_path).name,
+                                'data': image_path,
+                                'path': image_path
+                            })
+                            continue
+
                         full_image_path = os.path.join(image_dir, Path(image_path).name)
                         
                         try:
@@ -802,8 +932,8 @@ async def view_processed_chunks(
                                 'path': image_path
                             })
         
-        file_stats = os.stat(json_file_path)
-        file_size_kb = file_stats.st_size / 1024
+        # file_stats = os.stat(json_file_path)
+        file_size_kb = len(json_bytes) / 1024
         
         return {
             "success": True,

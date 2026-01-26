@@ -1,238 +1,153 @@
-"""Vector store operations using ChromaDB with append support"""
+"""Vector store operations using Qdrant (Cloud Native)"""
 import json
-import re
-from typing import List
+import logging
+from typing import List, Optional
 from langchain_core.documents import Document
 from langchain_google_genai import GoogleGenerativeAIEmbeddings
-from langchain_chroma import Chroma
+from langchain_community.vectorstores import Qdrant
+from qdrant_client import QdrantClient
+from qdrant_client.http import models as rest
+from config.settings import settings
 
+# Configure logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 class VectorStoreManager:
-    """Manages ChromaDB vector store operations"""
+    """Manages Qdrant vector store operations"""
     
-    def __init__(self, embedding_model: str ):
+    def __init__(self, embedding_model: str):
+        # Initialize Google Embeddings
         self.embedding_model = GoogleGenerativeAIEmbeddings(model=embedding_model)
-    
-    @staticmethod
-    def sanitize_collection_name(name: str) -> str:
-        """
-        Sanitize collection name to meet ChromaDB requirements:
-        - 3-512 characters
-        - Only alphanumeric, dots, underscores, hyphens
-        - Must start and end with alphanumeric
         
-        Args:
-            name: Original collection name
+        # Initialize Qdrant Client
+        # Note: Port 6333 is standard, user url included it.
+        url = settings.QDRANT_URL
+        api_key = settings.QDRANT_API_KEY
+        
+        if not url or not api_key:
+            logger.warning("Qdrant credentials missing in settings!")
             
-        Returns:
-            Sanitized collection name
-        """
-        # Replace invalid characters with underscores
-        sanitized = re.sub(r'[^a-zA-Z0-9._-]', '_', name)
-        
-        # Remove leading/trailing non-alphanumeric characters
-        sanitized = re.sub(r'^[^a-zA-Z0-9]+', '', sanitized)
-        sanitized = re.sub(r'[^a-zA-Z0-9]+$', '', sanitized)
-        
-        # Collapse multiple underscores/hyphens
-        sanitized = re.sub(r'[_-]+', '_', sanitized)
-        
-        # Ensure length is within bounds (3-512 characters)
-        if len(sanitized) < 3:
-            sanitized = f"doc_{sanitized}"
-        if len(sanitized) > 512:
-            sanitized = sanitized[:512]
-            # Re-ensure it ends with alphanumeric after truncation
-            sanitized = re.sub(r'[^a-zA-Z0-9]+$', '', sanitized)
-        
-        # Final validation
-        if not sanitized or len(sanitized) < 3:
-            sanitized = "default_collection"
-        
-        return sanitized
+        self.client = QdrantClient(url=url, api_key=api_key)
     
     def create_vector_store(
         self, 
         documents: List[Document], 
-        persist_directory: str,
-        collection_name: str = "multimodal_rag"
+        persist_directory: str = None, # Unused
+        collection_name: str = "multimodal_rag" # Maps to project_id (One collection per project)
     ):
         """
-        Create and persist ChromaDB vector store
-        
-        Args:
-            documents: List of LangChain documents
-            persist_directory: Directory to persist the database
-            collection_name: Name of the collection (will be sanitized)
-            
-        Returns:
-            ChromaDB vector store instance
+        Create (or append to) Qdrant collection.
+        Strategy: One Collection per Project ID.
         """
-        print("Creating embeddings and storing in ChromaDB...")
+        logger.info(f"Adding {len(documents)} documents to Qdrant (Collection: {collection_name})")
         
-        # Sanitize collection name
-        original_name = collection_name
-        collection_name = self.sanitize_collection_name(collection_name)
-        
-        if original_name != collection_name:
-            print(f"Collection name sanitized: '{original_name}' -> '{collection_name}'")
-        
-        # Convert list metadata to JSON strings (ChromaDB requirement)
+        # Prepare metadata
         for doc in documents:
-            if "raw_tables_html" in doc.metadata:
-                doc.metadata["raw_tables_html"] = json.dumps(doc.metadata["raw_tables_html"])
-            if "image_interpretation" in doc.metadata:
+            doc.metadata["project_id"] = collection_name
+            # Ensure complex metadata fields are strings (Qdrant handles JSON but LangChain behavior varies)
+            # Keeping stringification for consistency with previous logic
+            if "raw_tables_html" in doc.metadata and not isinstance(doc.metadata["raw_tables_html"], (str, type(None))):
+                 doc.metadata["raw_tables_html"] = json.dumps(doc.metadata["raw_tables_html"])
+            if "image_interpretation" in doc.metadata and not isinstance(doc.metadata["image_interpretation"], (str, type(None))):
                 doc.metadata["image_interpretation"] = json.dumps(doc.metadata["image_interpretation"])
-            if "table_interpretation" in doc.metadata:
+            if "table_interpretation" in doc.metadata and not isinstance(doc.metadata["table_interpretation"], (str, type(None))):
                 doc.metadata["table_interpretation"] = json.dumps(doc.metadata["table_interpretation"])
-            if "image_paths" in doc.metadata:
-                doc.metadata["image_paths"] = json.dumps(doc.metadata["image_paths"])
-            if "image_base64" in doc.metadata:
+            if "image_paths" in doc.metadata and not isinstance(doc.metadata["image_paths"], (str, type(None))):
+                if isinstance(doc.metadata["image_paths"], list):
+                     doc.metadata["image_paths"] = json.dumps(doc.metadata["image_paths"])
+            if "image_base64" in doc.metadata and not isinstance(doc.metadata["image_base64"], (str, type(None))):
                 doc.metadata["image_base64"] = json.dumps(doc.metadata["image_base64"])
-            if "page_numbers" in doc.metadata:
+            if "page_numbers" in doc.metadata and not isinstance(doc.metadata["page_numbers"], (str, type(None))):
                 doc.metadata["page_numbers"] = json.dumps(doc.metadata["page_numbers"])
-            if "content_types" in doc.metadata:
+            if "content_types" in doc.metadata and not isinstance(doc.metadata["content_types"], (str, type(None))):
                 doc.metadata["content_types"] = json.dumps(doc.metadata["content_types"])
         
-        print("--- Creating vector store ---")
-        vectorstore = Chroma.from_documents(
-            documents=documents,
-            embedding=self.embedding_model,
-            persist_directory=persist_directory,
+        # Ensure collection exists
+        # text-embedding-004 has 768 dimensions
+        try:
+            self.client.get_collection(collection_name)
+        except Exception:
+             logger.info(f"Creating new Qdrant collection: {collection_name}")
+             self.client.create_collection(
+                 collection_name=collection_name,
+                 vectors_config=rest.VectorParams(size=768, distance=rest.Distance.COSINE)
+             )
+        
+        # Add documents via LangChain Qdrant wrapper
+        vectorstore = Qdrant(
+            client=self.client,
             collection_name=collection_name,
-            collection_metadata={"hnsw:space": "cosine"}
+            embeddings=self.embedding_model
         )
-        print("--- Finished creating vector store ---")
+        vectorstore.add_documents(documents)
         
-        print(f"Vector store created with {len(documents)} documents")
-        print(f"Saved to {persist_directory}")
-        print(f"Collection name: {collection_name}")
+        # Attach project_id for later use
+        vectorstore.project_id = collection_name
         
+        logger.info("--- Finished adding to Qdrant vector store ---")
         return vectorstore
     
     def append_to_vector_store(
         self,
         documents: List[Document],
-        persist_directory: str,
+        persist_directory: str = None,
         collection_name: str = "multimodal_rag"
     ):
-        """
-        Append documents to existing vector store (or create if doesn't exist)
-        
-        Args:
-            documents: List of LangChain documents to add
-            persist_directory: Directory where database is persisted
-            collection_name: Name of the collection (will be sanitized)
-            
-        Returns:
-            ChromaDB vector store instance
-        """
-        print(f"Appending {len(documents)} documents to vector store...")
-        
-        # Sanitize collection name
-        collection_name = self.sanitize_collection_name(collection_name)
-        
-        # Convert list metadata to JSON strings
-        for doc in documents:
-            if "raw_tables_html" in doc.metadata:
-                doc.metadata["raw_tables_html"] = json.dumps(doc.metadata["raw_tables_html"])
-            if "image_interpretation" in doc.metadata:
-                doc.metadata["image_interpretation"] = json.dumps(doc.metadata["image_interpretation"])
-            if "table_interpretation" in doc.metadata:
-                doc.metadata["table_interpretation"] = json.dumps(doc.metadata["table_interpretation"])
-            if "image_paths" in doc.metadata:
-                doc.metadata["image_paths"] = json.dumps(doc.metadata["image_paths"])
-            if "image_base64" in doc.metadata:
-                doc.metadata["image_base64"] = json.dumps(doc.metadata["image_base64"])
-            if "page_numbers" in doc.metadata:
-                doc.metadata["page_numbers"] = json.dumps(doc.metadata["page_numbers"])
-            if "content_types" in doc.metadata:
-                doc.metadata["content_types"] = json.dumps(doc.metadata["content_types"])
-        
-        try:
-            # Try to load existing vector store
-            vectorstore = Chroma(
-                persist_directory=persist_directory,
-                embedding_function=self.embedding_model,
-                collection_name=collection_name
-            )
-            print(f"Loaded existing vector store: {collection_name}")
-            
-            # Add new documents
-            vectorstore.add_documents(documents)
-            print(f"Appended {len(documents)} documents to existing collection")
-            
-        except Exception as e:
-            print(f"Vector store doesn't exist, creating new one: {str(e)}")
-            # Create new if doesn't exist
-            vectorstore = Chroma.from_documents(
-                documents=documents,
-                embedding=self.embedding_model,
-                persist_directory=persist_directory,
-                collection_name=collection_name,
-                collection_metadata={"hnsw:space": "cosine"}
-            )
-            print(f"Created new vector store with {len(documents)} documents")
-        
-        print(f"Vector store path: {persist_directory}")
-        print(f"Collection name: {collection_name}")
-        
-        return vectorstore
+        """Append to vector store (same as create for Qdrant)"""
+        return self.create_vector_store(documents, persist_directory, collection_name)
     
     def load_vector_store(
         self, 
-        persist_directory: str,
+        persist_directory: str = None,
         collection_name: str = "multimodal_rag"
     ):
         """
-        Load existing ChromaDB vector store
-        
-        Args:
-            persist_directory: Directory where database is persisted
-            collection_name: Name of the collection (will be sanitized)
-            
-        Returns:
-            ChromaDB vector store instance
+        Load existing Qdrant vector store client.
         """
-        print(f"Loading vector store from {persist_directory}")
+        logger.info(f"Loading Qdrant vector store for collection: {collection_name}")
         
-        # Sanitize collection name
-        collection_name = self.sanitize_collection_name(collection_name)
-        
-        vectorstore = Chroma(
-            persist_directory=persist_directory,
-            embedding_function=self.embedding_model,
-            collection_name=collection_name
+        vectorstore = Qdrant(
+            client=self.client,
+            collection_name=collection_name,
+            embeddings=self.embedding_model
         )
         
-        print(f"Vector store loaded successfully")
+        vectorstore.project_id = collection_name
         return vectorstore
     
     def search(
         self, 
         vectorstore, 
         query: str, 
-        k: int = 2,
+        k: int = 5,
         filter_dict: dict = None
     ):
         """
-        Search the vector store
-        
-        Args:
-            vectorstore: ChromaDB instance
-            query: Search query
-            k: Number of results to return
-            filter_dict: Optional metadata filter
-            
-        Returns:
-            List of relevant documents
+        Search the vector store.
         """
-        print(f"Searching for: {query}")
+        logger.info(f"Searching collection {vectorstore.collection_name} for: {query}")
         
-        if filter_dict:
-            results = vectorstore.similarity_search(query, k=k, filter=filter_dict)
-        else:
-            results = vectorstore.similarity_search(query, k=k)
+        results = vectorstore.similarity_search(query, k=k, filter=filter_dict)
         
-        print(f"Found {len(results)} results")
+        logger.info(f"Found {len(results)} results")
         return results
+
+    def delete_project_vectors(self, project_id: str):
+        """Delete generic Qdrant collection for project"""
+        try:
+            logger.info(f"Deleting Qdrant collection: {project_id}")
+            self.client.delete_collection(collection_name=project_id)
+            logger.info(f"Deleted collection {project_id}")
+        except Exception as e:
+            logger.error(f"Error deleting collection {project_id} (might not exist): {e}")
+
+    def get_project_document_count(self, project_id: str) -> int:
+        """Get the count of vectors in the collection"""
+        try:
+            count_result = self.client.count(collection_name=project_id)
+            return count_result.count
+        except Exception as e:
+            # Collection might not exist
+            logger.warning(f"Error counting documents for {project_id}: {e}")
+            return 0
