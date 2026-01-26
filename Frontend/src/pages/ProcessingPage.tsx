@@ -1,5 +1,5 @@
 import { useEffect, useState, useRef } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import { useSSE } from '@/hooks/useSSE';
 import { StepIndicator } from '@/components/Processing/StepIndicator';
 import { ProgressBar } from '@/components/Processing/ProgressBar';
@@ -19,8 +19,12 @@ interface SavedProcessingData {
 }
 
 const ProcessingPage = () => {
-  const { documentId } = useParams<{ documentId: string }>();
+  const traverseParams = useParams();
+  // Safe access to documentId
+  const documentId = traverseParams.documentId;
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const queryProjectId = searchParams.get('projectId');
 
   // Check if we have saved data for this document
   const [hasSavedData, setHasSavedData] = useState(false);
@@ -37,6 +41,13 @@ const ProcessingPage = () => {
   const [processingTime, setProcessingTime] = useState(0);
   const [result, setResult] = useState<any>(null);
   const timerRef = useRef<NodeJS.Timeout | null>(null);
+
+  // Save project mapping if available
+  useEffect(() => {
+    if (documentId && queryProjectId) {
+      localStorage.setItem(`doc_${documentId}_project`, queryProjectId);
+    }
+  }, [documentId, queryProjectId]);
 
   // Load saved data on mount
   useEffect(() => {
@@ -56,6 +67,49 @@ const ProcessingPage = () => {
       }
     }
   }, [documentId]);
+
+  // Check backend status if not in local storage
+  useEffect(() => {
+    const projectId = queryProjectId ||
+      (documentId ? localStorage.getItem(`doc_${documentId}_project`) : null) ||
+      localStorage.getItem('currentProjectId');
+
+    if (hasSavedData || !documentId || !projectId) return;
+
+    const checkBackendStatus = async () => {
+      try {
+        const response = await apiService.getDocumentChunks(projectId, documentId, false);
+        if (response.success) {
+          const result = {
+            chunks_processed: response.chunks_count,
+            images_extracted: response.chunks?.reduce((acc: number, chunk: any) => acc + (chunk.image_paths?.length || 0), 0) || 0
+          };
+
+          const dataToSave: SavedProcessingData = {
+            documentId,
+            result,
+            processingTime: 0,
+            completedAt: new Date().toISOString()
+          };
+
+          setSavedData(dataToSave);
+          setHasSavedData(true);
+          setIsComplete(true);
+          setProgress(100);
+          setResult(result);
+          setStatusMessage('Processing complete!');
+          setStatusType('success');
+          setCurrentStep(4);
+
+          localStorage.setItem(`processing_${documentId}`, JSON.stringify(dataToSave));
+        }
+      } catch (e) {
+        console.log("Document not ready or fetch failed, waiting for SSE");
+      }
+    };
+
+    checkBackendStatus();
+  }, [documentId, queryProjectId, hasSavedData]);
 
   // Timer that stops when complete
   useEffect(() => {
@@ -159,7 +213,7 @@ const ProcessingPage = () => {
   };
 
   const handleBack = () => {
-    const mappedProjectId = (documentId && localStorage.getItem(`doc_${documentId}_project`)) || localStorage.getItem('currentProjectId');
+    const mappedProjectId = queryProjectId || (documentId && localStorage.getItem(`doc_${documentId}_project`)) || localStorage.getItem('currentProjectId');
 
     if (mappedProjectId) {
       localStorage.setItem('currentProjectId', mappedProjectId);

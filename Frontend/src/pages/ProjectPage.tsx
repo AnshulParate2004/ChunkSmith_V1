@@ -116,7 +116,7 @@ const ProjectPage = () => {
   };
 
   const handleDocClick = (doc: UploadedDoc) => {
-    navigate(`/processing/${doc.documentId}`);
+    navigate(`/processing/${doc.documentId}?projectId=${projectId}`);
   };
 
   const handleNewConversation = () => {
@@ -520,7 +520,7 @@ const ProjectPage = () => {
               {selectedDoc.status === 'complete' && (
                 <Button
                   onClick={() => {
-                    navigate(`/processing/${selectedDoc.documentId}`);
+                    navigate(`/processing/${selectedDoc.documentId}?projectId=${projectId}`);
                     setIsDetailsOpen(false);
                   }}
                   className="w-full"
