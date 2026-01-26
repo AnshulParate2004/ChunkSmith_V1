@@ -16,13 +16,12 @@ from utils.storage import StorageManager
 from dotenv import load_dotenv
 
 # Optional AI imports
-try:
-    from langchain_google_genai import ChatGoogleGenerativeAI
-    from langchain_core.messages import HumanMessage
-    from pydantic import BaseModel, Field
-    AI_AVAILABLE = True
-except ImportError:
-    AI_AVAILABLE = False
+
+from langchain_google_genai import ChatGoogleGenerativeAI
+from langchain_core.messages import HumanMessage
+from pydantic import BaseModel, Field
+
+
 
 # Load environment variables (try Backend and parent directories)
 load_dotenv()
@@ -30,13 +29,13 @@ load_dotenv(dotenv_path=Path(__file__).parent.parent / ".env")
 load_dotenv(dotenv_path=Path(__file__).parent.parent.parent / ".env")
 
 
-if AI_AVAILABLE:
-    class AIParser(BaseModel):
-        """AI Parser Model for text, image and table information"""
-        question: str = Field(description="List all potential questions that can be answered from this content (text, images, tables). Try to keep words similar to original content")
-        summary: str = Field(description="Comprehensive summary of all data and information. Try to keep words similar to original content")
-        image_interpretation: List[str] = Field(description="List matching the order of input images; image_interpretation[i] describes image i, use ***DO NOT USE THIS IMAGE*** for irrelevant images, and return an empty list if no images are provided.")
-        table_interpretation: List[str] = Field(description="List matching the order of input tables; table_interpretation[i] describes table i, use ***DO NOT USE THIS TABLE*** for irrelevant tables, and return an empty list if no tables are provided.")
+
+class AIParser(BaseModel):
+    """AI Parser Model for text, image and table information"""
+    question: str = Field(description="List all potential questions that can be answered from this content (text, images, tables). Try to keep words similar to original content")
+    summary: str = Field(description="Comprehensive summary of all data and information. Try to keep words similar to original content")
+    image_interpretation: List[str] = Field(description="List matching the order of input images; image_interpretation[i] describes image i, use ***DO NOT USE THIS IMAGE*** for irrelevant images, and return an empty list if no images are provided.")
+    table_interpretation: List[str] = Field(description="List matching the order of input tables; table_interpretation[i] describes table i, use ***DO NOT USE THIS TABLE*** for irrelevant tables, and return an empty list if no tables are provided.")
 
 
 class SimpleExtractor:
@@ -56,7 +55,7 @@ class SimpleExtractor:
         self.image_dir.mkdir(parents=True, exist_ok=True)
         print(f"Image directory: {self.image_dir}")
         
-        self.use_ai = use_ai and AI_AVAILABLE
+        self.use_ai = use_ai
         if self.use_ai:
             api_key = os.getenv("GOOGLE_API_KEY")
             if not api_key:
@@ -497,7 +496,6 @@ def main():
     parser.add_argument(
         "--image-dir",
         type=str,
-        default=r"D:\Jayraj\ChunkSmith\jayraj_images",
         help="Directory to save extracted images (default: D:\\Jayraj\\ChunkSmith\\jayraj_images)"
     )
     
@@ -582,18 +580,18 @@ def main():
         # Batch processing mode
         folder_path = Path(args.folder)
         if not folder_path.exists() or not folder_path.is_dir():
-            print(f"Error: Folder not found: {folder_path}")
+            # print(f"Error: Folder not found: {folder_path}")
             sys.exit(1)
         
         # Find all PDF files in folder
         pdf_files = sorted(folder_path.glob("*.pdf"))
         if not pdf_files:
-            print(f"Error: No PDF files found in folder: {folder_path}")
+            # print(f"Error: No PDF files found in folder: {folder_path}")
             sys.exit(1)
         
-        print(f"\n=== Batch Processing Mode ===")
-        print(f"Found {len(pdf_files)} PDF file(s) in: {folder_path}")
-        print(f"Images will be saved to: {args.image_dir}")
+        # print(f"\n=== Batch Processing Mode ===")
+        # print(f"Found {len(pdf_files)} PDF file(s) in: {folder_path}")
+        # print(f"Images will be saved to: {args.image_dir}")
         
         # Parse languages
         languages = [lang.strip() for lang in args.languages.split(',')]
@@ -612,9 +610,9 @@ def main():
         failed = []
         
         for idx, pdf_path in enumerate(pdf_files, 1):
-            print(f"\n{'='*60}")
-            print(f"Processing PDF {idx}/{len(pdf_files)}: {pdf_path.name}")
-            print(f"{'='*60}")
+            # print(f"\n{'='*60}")
+            # print(f"Processing PDF {idx}/{len(pdf_files)}: {pdf_path.name}")
+            # print(f"{'='*60}")
             
             # Set output directory
             if args.output_dir:
@@ -640,34 +638,34 @@ def main():
                 )
                 
                 # Save output
-                print(f"\n=== Saving Output ===")
+                # print(f"\n=== Saving Output ===")
                 extractor.save_output(extracted_data, output_dir, filename_base)
                 
                 total_chunks += len(extracted_data)
                 successful += 1
                 
-                print(f"\n[OK] Successfully processed: {pdf_path.name}")
-                print(f"  Chunks: {len(extracted_data)}")
-                print(f"  JSON: {Path(output_dir) / f'{filename_base}.json'}")
-                print(f"  Pickle: {Path(output_dir) / f'{filename_base}.pkl'}")
+                # print(f"\n[OK] Successfully processed: {pdf_path.name}")
+                # print(f"  Chunks: {len(extracted_data)}")
+                # print(f"  JSON: {Path(output_dir) / f'{filename_base}.json'}")
+                # print(f"  Pickle: {Path(output_dir) / f'{filename_base}.pkl'}")
                 
             except Exception as e:
-                print(f"\nX Error processing {pdf_path.name}: {str(e)}")
+                # print(f"\nX Error processing {pdf_path.name}: {str(e)}")
                 import traceback
                 traceback.print_exc()
                 failed.append((pdf_path.name, str(e)))
         
         # Summary
-        print(f"\n{'='*60}")
-        print(f"=== Batch Processing Complete ===")
-        print(f"{'='*60}")
-        print(f"Total PDFs processed: {successful}/{len(pdf_files)}")
-        print(f"Total chunks extracted: {total_chunks}")
-        print(f"Images saved to: {args.image_dir}")
+        # print(f"\n{'='*60}")
+        # print(f"=== Batch Processing Complete ===")
+        # print(f"{'='*60}")
+        # print(f"Total PDFs processed: {successful}/{len(pdf_files)}")
+        # print(f"Total chunks extracted: {total_chunks}")
+        # print(f"Images saved to: {args.image_dir}")
         if failed:
-            print(f"\nFailed PDFs ({len(failed)}):")
+            # print(f"\nFailed PDFs ({len(failed)}):")
             for pdf_name, error in failed:
-                print(f"  - {pdf_name}: {error}")
+                # print(f"  - {pdf_name}: {error}")
         
     else:
         # Single file mode
@@ -676,11 +674,11 @@ def main():
         
         pdf_path = Path(args.pdf_path)
         if not pdf_path.exists():
-            print(f"Error: PDF file not found: {pdf_path}")
+            # print(f"Error: PDF file not found: {pdf_path}")
             sys.exit(1)
         
         if not pdf_path.suffix.lower() == '.pdf':
-            print(f"Error: File must be a PDF: {pdf_path}")
+            # print(f"Error: File must be a PDF: {pdf_path}")
             sys.exit(1)
         
         # Set output directory
@@ -719,17 +717,17 @@ def main():
             )
             
             # Save output
-            print(f"\n=== Saving Output ===")
+            # print(f"\n=== Saving Output ===")
             extractor.save_output(extracted_data, output_dir, filename_base)
             
-            print(f"\n=== Extraction Complete ===")
-            print(f"Chunks extracted: {len(extracted_data)}")
-            print(f"Images saved to: {args.image_dir}")
-            print(f"JSON saved to: {Path(output_dir) / f'{filename_base}.json'}")
-            print(f"Pickle saved to: {Path(output_dir) / f'{filename_base}.pkl'}")
+            # print(f"\n=== Extraction Complete ===")
+            # print(f"Chunks extracted: {len(extracted_data)}")
+            # print(f"Images saved to: {args.image_dir}")
+            # print(f"JSON saved to: {Path(output_dir) / f'{filename_base}.json'}")
+            # print(f"Pickle saved to: {Path(output_dir) / f'{filename_base}.pkl'}")
             
         except Exception as e:
-            print(f"\nError during extraction: {str(e)}")
+            # print(f"\nError during extraction: {str(e)}")
             import traceback
             traceback.print_exc()
             sys.exit(1)

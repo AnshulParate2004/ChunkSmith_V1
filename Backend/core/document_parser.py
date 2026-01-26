@@ -1,4 +1,4 @@
-"""Document parsing module using Unstructured API"""
+# """Document parsing module using Unstructured API"""
 import os
 from pathlib import Path
 from typing import List
@@ -74,11 +74,11 @@ class DocumentParser:
                 if lang in SUPPORTED_LANGUAGES.values():
                     codes.append(lang)
                 else:
-                    print(f"Warning: Unknown language '{lang}', skipping")
+                    # print(f"Warning: Unknown language '{lang}', skipping")
         
         # Default to English if no valid languages
         if not codes:
-            print("No valid languages found, defaulting to English")
+            # print("No valid languages found, defaulting to English")
             codes = ['eng']
         
         return codes
@@ -114,9 +114,9 @@ class DocumentParser:
         if not os.path.exists(file_path):
             raise FileNotFoundError(f"PDF file not found: {file_path}")
         
-        print(f"Partitioning document: {file_path}")
-        print(f"File size: {os.path.getsize(file_path):,} bytes")
-        print(f"Settings: split_pdf_concurrency_level={split_pdf_concurrency_level}")
+        # print(f"Partitioning document: {file_path}")
+        # print(f"File size: {os.path.getsize(file_path):,} bytes")
+        # print(f"Settings: split_pdf_concurrency_level={split_pdf_concurrency_level}")
         
         # Initialize Unstructured API client
         client = UnstructuredClient(api_key_auth=self.api_key)
@@ -142,18 +142,18 @@ class DocumentParser:
             )
         )
         
-        print("Partitioning PDF with Unstructured API...")
+        # print("Partitioning PDF with Unstructured API...")
         result = client.general.partition(request=request)
         elements = elements_from_dicts(result.elements)
         
-        print(f"✓ Partitioning complete: {len(elements)} elements")
+        # print(f"✓ Partitioning complete: {len(elements)} elements")
         
         # Print element breakdown
         element_types = {}
         for elem in elements:
             elem_type = type(elem).__name__
             element_types[elem_type] = element_types.get(elem_type, 0) + 1
-        print(f"Element breakdown: {dict(element_types)}")
+        # print(f"Element breakdown: {dict(element_types)}")
         
         return elements
     

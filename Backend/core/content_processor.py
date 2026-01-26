@@ -37,8 +37,8 @@ class ContentProcessor:
         if not self.api_keys:
             raise ValueError("No GOOGLE_API_KEY found in environment")
         
-        print(f"Initialized ContentProcessor with {len(self.api_keys)} API keys")
-        print(f"Model: {model_name}")
+        # print(f"Initialized ContentProcessor with {len(self.api_keys)} API keys")
+        # print(f"Model: {model_name}")
         
         Path(image_dir).mkdir(parents=True, exist_ok=True)
     
@@ -58,17 +58,17 @@ class ContentProcessor:
             key = os.getenv(f"GOOGLE_API_KEY_{i}")
             if key and key.strip():
                 api_keys.append(key.strip())
-                print(f"DEBUG: Loaded GOOGLE_API_KEY_{i}")
+                # print(f"DEBUG: Loaded GOOGLE_API_KEY_{i}")
         
         # Fallback to single GOOGLE_API_KEY if no numbered keys found
         if not api_keys:
             single_key = os.getenv("GOOGLE_API_KEY")
             if single_key and single_key.strip():
                 api_keys.append(single_key.strip())
-                print(f"DEBUG: Loaded GOOGLE_API_KEY (fallback)")
+                # print(f"DEBUG: Loaded GOOGLE_API_KEY (fallback)")
             else:
-                print(f"DEBUG: No GOOGLE_API_KEY found in environment!")
-                print(f"DEBUG: Available env vars: {[k for k in os.environ.keys() if 'GOOGLE' in k]}")
+                # print(f"DEBUG: No GOOGLE_API_KEY found in environment!")
+                # print(f"DEBUG: Available env vars: {[k for k in os.environ.keys() if 'GOOGLE' in k]}")
         
         return api_keys
     
@@ -170,11 +170,11 @@ class ContentProcessor:
                         # Keep base64 for AI processing
                         content_data['image_base64'].append(image_base64)
 
-                        print(f"Uploaded: {public_url}")
+                        # print(f"Uploaded: {public_url}")
                         image_counter['count'] += 1
 
                     except Exception as e:
-                        print(f"Failed to save image {image_counter['count']}: {e}")
+                        # print(f"Failed to save image {image_counter['count']}: {e}")
 
         return content_data
     
@@ -250,15 +250,15 @@ TEXT CONTENT:
             llm_structured = self._get_llm_for_key(api_key)
             
             # Make async API call
-            print(f"Chunk {chunk_index}: Sending to API (key #{self.api_keys.index(api_key) + 1})")
+            # print(f"Chunk {chunk_index}: Sending to API (key #{self.api_keys.index(api_key) + 1})")
             response = await llm_structured.ainvoke([message])
-            print(f"Chunk {chunk_index}: Response received")
+            # print(f"Chunk {chunk_index}: Response received")
             
             return response
                 
         except Exception as e:
             # On failure, return None to use raw chunk (no error messages)
-            print(f"Chunk {chunk_index}: AI summary failed, using raw chunk data")
+            # print(f"Chunk {chunk_index}: AI summary failed, using raw chunk data")
             return None
     
     async def process_chunks_async(self, chunks_data: List[Dict]) -> List[Optional[AIParser]]:
@@ -289,9 +289,9 @@ TEXT CONTENT:
             tasks.append(task)
         
         # Run all tasks concurrently
-        print(f"\nProcessing {len(tasks)} chunks asynchronously with {min(len(tasks), len(self.api_keys))} API keys...")
+        # print(f"\nProcessing {len(tasks)} chunks asynchronously with {min(len(tasks), len(self.api_keys))} API keys...")
         responses = await asyncio.gather(*tasks)
-        print(f"All {len(responses)} chunks processed!\n")
+        # print(f"All {len(responses)} chunks processed!\n")
         
         return responses
     
@@ -305,7 +305,7 @@ TEXT CONTENT:
         Returns:
             List of LangChain Documents with enhanced summaries
         """
-        print("Processing chunks with AI Summaries (Multi-API Async Mode)...")
+        # print("Processing chunks with AI Summaries (Multi-API Async Mode)...")
         
         # No longer cleaning - project-based structure keeps data isolated
         
@@ -324,7 +324,7 @@ TEXT CONTENT:
             
             if existing_numbers:
                 start_count = max(existing_numbers) + 1
-                print(f"Found {len(existing_images)} existing images, starting from image_{start_count:04d}.png")
+                # print(f"Found {len(existing_images)} existing images, starting from image_{start_count:04d}.png")
             else:
                 start_count = 1
         else:
@@ -334,37 +334,37 @@ TEXT CONTENT:
         image_counter = {'count': start_count}
         
         # Step 1: Extract content from all chunks (synchronous)
-        print(f"\nExtracting content from {total_chunks} chunks...")
+        # print(f"\nExtracting content from {total_chunks} chunks...")
         chunks_data = []
         
         for i, chunk in enumerate(chunks, 1):
-            print(f"Extracting chunk {i}/{total_chunks}")
+            # print(f"Extracting chunk {i}/{total_chunks}")
             
             # Analyze chunk content
             content_data = self.separate_content_types(chunk, image_counter)
             
             # Debug info
-            print(f"Types: {', '.join(content_data['types'])}, "
-                  f"Tables: {len(content_data['tables'])}, "
-                  f"Images: {len(content_data['image_base64'])}")
+            # print(f"Types: {', '.join(content_data['types'])}, "
+            #       f"Tables: {len(content_data['tables'])}, "
+            #       f"Images: {len(content_data['image_base64'])}")
             if content_data['page_no']:
-                print(f"Pages: {content_data['page_no']}")
+                # print(f"Pages: {content_data['page_no']}")
             
             chunks_data.append(content_data)
         
-        print(f"\nContent extraction complete!")
-        print(f"Total images saved: {image_counter['count'] - 1}")
+        # print(f"\nContent extraction complete!")
+        # print(f"Total images saved: {image_counter['count'] - 1}")
         
         # Step 2: Process all chunks asynchronously with different API keys
-        print(f"\nStarting async AI processing...")
-        print(f"Using {len(self.api_keys)} API key(s)")
-        print(f"Processing {total_chunks} chunk(s)")
+        # print(f"\nStarting async AI processing...")
+        # print(f"Using {len(self.api_keys)} API key(s)")
+        # print(f"Processing {total_chunks} chunk(s)")
         
         # Run async processing
         ai_responses = asyncio.run(self.process_chunks_async(chunks_data))
         
         # Step 3: Create LangChain documents
-        print(f"\nCreating LangChain documents...")
+        # print(f"\nCreating LangChain documents...")
         langchain_documents = []
         
         for idx, (content_data, ai_response) in enumerate(zip(chunks_data, ai_responses), 1):
@@ -373,7 +373,7 @@ TEXT CONTENT:
                 # Create document with raw data AND fallback AI fields to ensure schema consistency
                 combined_content = content_data['text']
                 
-                print(f"Document {idx}: Using raw chunk data (AI summary failed)")
+                # print(f"Document {idx}: Using raw chunk data (AI summary failed)")
                 
                 # Generate fallback interpretations for images/tables if they exist
                 fallback_image_interp = ["***IMAGE SUMMARY FAILED***"] * len(content_data['image_base64'])
@@ -420,7 +420,7 @@ IMAGE ANALYSIS: {img_analysis_text}
 TABLE ANALYSIS: {table_analysis_text}
 ORIGINAL TEXT: {content_data['text']}"""
                 
-                print(f"Document {idx}: {ai_response.summary[:100]}...")
+                # print(f"Document {idx}: {ai_response.summary[:100]}...")
                 
                 # Create LangChain Document with metadata including AI fields
                 doc = Document(
@@ -433,7 +433,7 @@ ORIGINAL TEXT: {content_data['text']}"""
                         "ai_summary": ai_response.summary,
                         "image_interpretation": ai_response.image_interpretation,
                         "table_interpretation": ai_response.table_interpretation,
-                        "image_paths": content_data['images_dirpath'],
+                       #  "image_paths": content_data['images_dirpath'],
                         "image_base64": content_data['image_base64'],
                         "page_numbers": content_data['page_no'],
                         "content_types": content_data['types'],
@@ -442,7 +442,7 @@ ORIGINAL TEXT: {content_data['text']}"""
             
             langchain_documents.append(doc)
         
-        print(f"\nSuccessfully processed {len(langchain_documents)} chunks")
-        print(f"Used async processing with {len(self.api_keys)} API key(s)")
+        # print(f"\nSuccessfully processed {len(langchain_documents)} chunks")
+        # print(f"Used async processing with {len(self.api_keys)} API key(s)")
         
         return langchain_documents

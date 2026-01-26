@@ -17,13 +17,13 @@ class StorageManager:
     def _initialize(self):
         """Initialize Supabase client"""
         if not settings.SUPABASE_URL or not settings.SUPABASE_KEY:
-            print("Warning: Supabase credentials not found. StorageManager will fail if used.")
+            # print("Warning: Supabase credentials not found. StorageManager will fail if used.")
             return
 
         try:
             self._client = create_client(settings.SUPABASE_URL, settings.SUPABASE_KEY)
         except Exception as e:
-            print(f"Failed to initialize Supabase client: {e}")
+            # print(f"Failed to initialize Supabase client: {e}")
 
     def upload_file(self, file_path: str, destination_path: str, content_type: str = None, bucket_name: str = None) -> str:
         """
@@ -64,7 +64,7 @@ class StorageManager:
             return public_url
 
         except Exception as e:
-            print(f"Error uploading to Supabase: {e}")
+            # print(f"Error uploading to Supabase: {e}")
             raise e
 
     def upload_bytes(self, file_content: bytes, destination_path: str, content_type: str = "application/octet-stream", bucket_name: str = None) -> str:
@@ -96,7 +96,7 @@ class StorageManager:
             return public_url
 
         except Exception as e:
-            print(f"Error uploading bytes to Supabase: {e}")
+            # print(f"Error uploading bytes to Supabase: {e}")
             raise e
 
     def download_file(self, path: str, bucket_name: str = None) -> bytes:
@@ -118,7 +118,7 @@ class StorageManager:
         try:
             return self._client.storage.from_(bucket).download(path)
         except Exception as e:
-            print(f"Error downloading from Supabase: {e}")
+            # print(f"Error downloading from Supabase: {e}")
             raise e
 
     def upload_data(self, content: bytes, destination_path: str, content_type: str = "application/json", bucket_name: str = None) -> str:
@@ -149,7 +149,7 @@ class StorageManager:
             return destination_path
 
         except Exception as e:
-            print(f"Error uploading data to Supabase: {e}")
+            # print(f"Error uploading data to Supabase: {e}")
             raise e
 
     def list_bucket_contents(self, bucket_name: str = None, path: str = None) -> list:
@@ -171,7 +171,7 @@ class StorageManager:
         try:
             return self._client.storage.from_(bucket).list(path)
         except Exception as e:
-            print(f"Error listing bucket contents: {e}")
+            # print(f"Error listing bucket contents: {e}")
             return []
 
     def delete_file(self, bucket_name: str, path: str):
@@ -180,7 +180,7 @@ class StorageManager:
         try:
             self._client.storage.from_(bucket_name).remove([path])
         except Exception as e:
-            print(f"Error deleting file {path}: {e}")
+            # print(f"Error deleting file {path}: {e}")
 
     def delete_folder(self, bucket_name: str, folder_path: str):
         """
@@ -213,9 +213,9 @@ class StorageManager:
                     paths_to_delete.append(full_path)
             
             # Delete files in this folder
-            if paths_to_delete:
-                print(f"Deleting {len(paths_to_delete)} files from {bucket_name}/{folder_path}")
-                # Batch delete (limit is usually 65536, we are fine)
+        # if paths_to_delete:
+                # print(f"Deleting {len(paths_to_delete)} files from {bucket_name}/{folder_path}")
+           #      # Batch delete (limit is usually 65536, we are fine)
                 self._client.storage.from_(bucket_name).remove(paths_to_delete)
                 
         except Exception as e:

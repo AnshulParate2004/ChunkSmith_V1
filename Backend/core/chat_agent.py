@@ -1,14 +1,3 @@
-"""
-AI Chat Agent with RAG capabilities (Optimized + Route Compatible)
-File: D:\\MultiModulRag\\Backend\\core\\chat_agent.py
-
-OPTIMIZATIONS:
-- Uses pre-stored base64 images (no disk re-encoding)
-- Sends only image/table summaries to AI (not full data)
-- Uses Pydantic structured output (no regex parsing)
-- Deduplicates images by index
-- Compatible with existing SSE streaming routes
-"""
 import os
 import json
 from pathlib import Path
@@ -117,42 +106,8 @@ Answer the user's question based on the context and conversation history."""
             query=query,
             k=k
         )
-                        
-        # clean_json = [
-        #     {
-        #         "chunk_index": doc.metadata.get("chunk_index"),
-        #         "enhanced_content": doc.page_content,
-        #         "original_text": doc.metadata.get("original_text", ""),
-        #         "raw_tables_html": doc.metadata.get("raw_tables_html", []),
-        #         "ai_questions": doc.metadata.get("ai_questions", ""),
-        #         "ai_summary": doc.metadata.get("ai_summary", ""),
-        #         "image_interpretation": doc.metadata.get("image_interpretation", []),
-        #         "table_interpretation": doc.metadata.get("table_interpretation", []),
-        #         "image_paths": doc.metadata.get("image_paths", []),
-        #         "image_base64": doc.metadata.get("image_base64", []),
-        #         "page_numbers": doc.metadata.get("page_numbers", []),
-        #         "content_types": doc.metadata.get("content_types", []),
-        #     }
-        #     for doc in data
-        # ]
 
-        # doc = Document(
-        #         page_content=combined_content,
-        #         metadata={
-        #             "chunk_index": i,
-        #             "original_text": content_data['text'],
-        #             "raw_tables_html": content_data['tables'],
-        #             "ai_questions": ai_response.question,
-        #             "ai_summary": ai_response.summary,
-        #             "image_interpretation": ai_response.image_interpretation,
-        #             "table_interpretation": ai_response.table_interpretation,
-        #             "image_paths": content_data['images_dirpath'],
-        #             "image_base64": content_data['image_base64'],
-        #             "page_numbers": content_data['page_no'],
-        #             "content_types": content_data['types'],
-        #         }
-        #     )
-        print(f"Found {len(results)} relevant context chunks for query: '{query}'")
+        # print(f"Found {len(results)} relevant context chunks for query: '{query}'")
         
         context_chunks = []
         for doc in results:
@@ -368,9 +323,9 @@ Answer the user's question based on the context and conversation history."""
                             }
                         }
                         images_sent += 1
-                        print(f"Sent image {img_idx}: {img_data['filename']} (from memory)")
+                        # print(f"Sent image {img_idx}: {img_data['filename']} (from memory)")
                     else:
-                        print(f"Warning: AI referenced invalid image index: {img_idx}")
+                        # print(f"Warning: AI referenced invalid image index: {img_idx}")
             
             # Step 6: Update conversation history
             self.conversation_history.append(HumanMessage(content=user_message))
@@ -391,7 +346,7 @@ Answer the user's question based on the context and conversation history."""
             }
             
         except Exception as e:
-            print(f"Error in chat_stream: {str(e)}")
+            # print(f"Error in chat_stream: {str(e)}")
             yield {
                 "type": "error",
                 "data": {
@@ -403,4 +358,4 @@ Answer the user's question based on the context and conversation history."""
     def clear_history(self):
         """Clear conversation history"""
         self.conversation_history = []
-        print("Conversation history cleared")
+        # print("Conversation history cleared")

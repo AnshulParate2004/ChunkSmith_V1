@@ -40,7 +40,6 @@ class Settings(BaseSettings):
     SUPABASE_DATA_BUCKET_NAME: str = "chunk_data"
     SUPABASE_PDF_BUCKET_NAME: str = "chunk_pdf"
     SUPABASE_PKL_BUCKET_NAME: str = "chunk_pkl"
-    SUPABASE_VECTOR_TABLE: str = "documents"
     
     class Config:
         env_file = ".env"

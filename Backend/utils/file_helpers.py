@@ -17,7 +17,7 @@ class FileHandler:
         
         with open(filepath, "wb") as f:
             pickle.dump(data, f)
-        print(f"Saved pickle: {filepath}")
+        # print(f"Saved pickle: {filepath}")
     
     @staticmethod
     def load_pickle(filepath: str):
@@ -27,7 +27,7 @@ class FileHandler:
         
         with open(filepath, "rb") as f:
             data = pickle.load(f)
-        print(f"Loaded pickle: {filepath}")
+        # print(f"Loaded pickle: {filepath}")
         return data
     
     @staticmethod
@@ -35,24 +35,6 @@ class FileHandler:
         """Save LangChain documents to JSON"""
         Path(filepath).parent.mkdir(parents=True, exist_ok=True)
         
-            # doc = Document(
-            #     page_content=combined_content,
-            #     metadata={
-            #         "chunk_index": i,
-            #         "original_text": content_data['text'],
-            #         "raw_tables_html": content_data['tables'],
-            #         "ai_questions": ai_response.question,
-            #         "ai_summary": ai_response.summary,
-            #         "image_interpretation": ai_response.image_interpretation,
-            #         "table_interpretation": ai_response.table_interpretation,
-            #         "image_paths": content_data['images_dirpath'],
-            #         "image_base64": content_data['image_base64'],
-            #         "page_numbers": content_data['page_no'],
-            #         "content_types": content_data['types'],
-            #     }
-            # )
-            
-        # Convert documents to clean JSON format
         clean_json = [
             {
                 "chunk_index": doc.metadata.get("chunk_index"),
@@ -74,8 +56,8 @@ class FileHandler:
         with open(filepath, "w", encoding="utf-8") as f:
             json.dump(clean_json, f, indent=4, ensure_ascii=False)
         
-        print(f"Saved JSON: {filepath}")
-    
+        # print(f"Saved JSON: {filepath}")
+   
     @staticmethod
     def validate_pdf(filepath: str, max_size_mb: int = 50) -> tuple[bool, str]:
         """

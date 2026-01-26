@@ -10,8 +10,8 @@ from qdrant_client.http import models as rest
 from config.settings import settings
 
 # Configure logging
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
+# logging.basicConfig(level=logging.INFO)
+# logger = logging.getLogger(__name__)
 
 class VectorStoreManager:
     """Manages Qdrant vector store operations"""
@@ -25,8 +25,8 @@ class VectorStoreManager:
         url = settings.QDRANT_URL
         api_key = settings.QDRANT_API_KEY
         
-        if not url or not api_key:
-            logger.warning("Qdrant credentials missing in settings!")
+        # if not url or not api_key:
+            # logger.warning("Qdrant credentials missing in settings!")
             
         self.client = QdrantClient(url=url, api_key=api_key)
     
@@ -40,7 +40,7 @@ class VectorStoreManager:
         Create (or append to) Qdrant collection.
         Strategy: One Collection per Project ID.
         """
-        logger.info(f"Adding {len(documents)} documents to Qdrant (Collection: {collection_name})")
+        # logger.info(f"Adding {len(documents)} documents to Qdrant (Collection: {collection_name})")
         
         # Prepare metadata
         for doc in documents:
@@ -68,7 +68,7 @@ class VectorStoreManager:
         try:
             self.client.get_collection(collection_name)
         except Exception:
-             logger.info(f"Creating new Qdrant collection: {collection_name}")
+             # logger.info(f"Creating new Qdrant collection: {collection_name}")
              self.client.create_collection(
                  collection_name=collection_name,
                  vectors_config=rest.VectorParams(size=768, distance=rest.Distance.COSINE)
@@ -85,7 +85,7 @@ class VectorStoreManager:
         # Attach project_id for later use
         vectorstore.project_id = collection_name
         
-        logger.info("--- Finished adding to Qdrant vector store ---")
+        # logger.info("--- Finished adding to Qdrant vector store ---")
         return vectorstore
     
     def append_to_vector_store(
@@ -105,7 +105,7 @@ class VectorStoreManager:
         """
         Load existing Qdrant vector store client.
         """
-        logger.info(f"Loading Qdrant vector store for collection: {collection_name}")
+        # logger.info(f"Loading Qdrant vector store for collection: {collection_name}")
         
         vectorstore = Qdrant(
             client=self.client,
@@ -126,19 +126,19 @@ class VectorStoreManager:
         """
         Search the vector store.
         """
-        logger.info(f"Searching collection {vectorstore.collection_name} for: {query}")
+        # logger.info(f"Searching collection {vectorstore.collection_name} for: {query}")
         
         results = vectorstore.similarity_search(query, k=k, filter=filter_dict)
         
-        logger.info(f"Found {len(results)} results")
+        # logger.info(f"Found {len(results)} results")
         return results
 
     def delete_project_vectors(self, project_id: str):
         """Delete generic Qdrant collection for project"""
         try:
-            logger.info(f"Deleting Qdrant collection: {project_id}")
+            # logger.info(f"Deleting Qdrant collection: {project_id}")
             self.client.delete_collection(collection_name=project_id)
-            logger.info(f"Deleted collection {project_id}")
+            # logger.info(f"Deleted collection {project_id}")
         except Exception as e:
             logger.error(f"Error deleting collection {project_id} (might not exist): {e}")
 
@@ -149,5 +149,5 @@ class VectorStoreManager:
             return count_result.count
         except Exception as e:
             # Collection might not exist
-            logger.warning(f"Error counting documents for {project_id}: {e}")
+            # logger.warning(f"Error counting documents for {project_id}: {e}")
             return 0
