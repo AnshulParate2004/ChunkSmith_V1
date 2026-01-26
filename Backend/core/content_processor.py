@@ -67,7 +67,7 @@ class ContentProcessor:
                 api_keys.append(single_key.strip())
                 # print(f"DEBUG: Loaded GOOGLE_API_KEY (fallback)")
             else:
-                # print(f"DEBUG: No GOOGLE_API_KEY found in environment!")
+                print(f"DEBUG: No GOOGLE_API_KEY found in environment!")
                 # print(f"DEBUG: Available env vars: {[k for k in os.environ.keys() if 'GOOGLE' in k]}")
         
         return api_keys
@@ -174,7 +174,7 @@ class ContentProcessor:
                         image_counter['count'] += 1
 
                     except Exception as e:
-                        # print(f"Failed to save image {image_counter['count']}: {e}")
+                        print(f"Failed to save image {image_counter['count']}: {e}")
 
         return content_data
     
@@ -279,7 +279,7 @@ TEXT CONTENT:
             api_key_index = i % len(self.api_keys)
             api_key = self.api_keys[api_key_index]
             
-            task = self. create_ai_enhanced_summary_async(
+            task = self.create_ai_enhanced_summary_async(
                 text=chunk_data['text'],
                 tables=chunk_data['tables'],
                 images=chunk_data['image_base64'],
@@ -350,7 +350,7 @@ TEXT CONTENT:
             if content_data['page_no']:
                 # print(f"Pages: {content_data['page_no']}")
             
-            chunks_data.append(content_data)
+             chunks_data.append(content_data)
         
         # print(f"\nContent extraction complete!")
         # print(f"Total images saved: {image_counter['count'] - 1}")
@@ -433,7 +433,7 @@ ORIGINAL TEXT: {content_data['text']}"""
                         "ai_summary": ai_response.summary,
                         "image_interpretation": ai_response.image_interpretation,
                         "table_interpretation": ai_response.table_interpretation,
-                       #  "image_paths": content_data['images_dirpath'],
+                        "image_paths": content_data['images_dirpath'],
                         "image_base64": content_data['image_base64'],
                         "page_numbers": content_data['page_no'],
                         "content_types": content_data['types'],

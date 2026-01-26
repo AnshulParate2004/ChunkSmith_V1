@@ -24,6 +24,7 @@ class StorageManager:
             self._client = create_client(settings.SUPABASE_URL, settings.SUPABASE_KEY)
         except Exception as e:
             # print(f"Failed to initialize Supabase client: {e}")
+            pass
 
     def upload_file(self, file_path: str, destination_path: str, content_type: str = None, bucket_name: str = None) -> str:
         """
@@ -181,6 +182,7 @@ class StorageManager:
             self._client.storage.from_(bucket_name).remove([path])
         except Exception as e:
             # print(f"Error deleting file {path}: {e}")
+            pass
 
     def delete_folder(self, bucket_name: str, folder_path: str):
         """
@@ -213,9 +215,9 @@ class StorageManager:
                     paths_to_delete.append(full_path)
             
             # Delete files in this folder
-        # if paths_to_delete:
+            if paths_to_delete:
                 # print(f"Deleting {len(paths_to_delete)} files from {bucket_name}/{folder_path}")
-           #      # Batch delete (limit is usually 65536, we are fine)
+                # Batch delete (limit is usually 65536, we are fine)
                 self._client.storage.from_(bucket_name).remove(paths_to_delete)
                 
         except Exception as e:

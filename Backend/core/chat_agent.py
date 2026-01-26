@@ -326,7 +326,8 @@ Answer the user's question based on the context and conversation history."""
                         # print(f"Sent image {img_idx}: {img_data['filename']} (from memory)")
                     else:
                         # print(f"Warning: AI referenced invalid image index: {img_idx}")
-            
+                        pass
+
             # Step 6: Update conversation history
             self.conversation_history.append(HumanMessage(content=user_message))
             self.conversation_history.append(AIMessage(content=answer_text))
