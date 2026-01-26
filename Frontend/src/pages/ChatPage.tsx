@@ -4,11 +4,14 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card } from '@/components/ui/card';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { ArrowLeft, Send, Loader2, Trash2 } from 'lucide-react';
+import { ArrowLeft, Send, Loader2 } from 'lucide-react';
 import { apiService } from '@/services/api';
 import { toast } from 'sonner';
 import { StreamingSteps, StreamingStep } from '@/components/Chat/StreamingSteps';
 import { ChatMessage, ChatImage } from '@/components/Chat/ChatMessage';
+import { useAuth } from '@/context/AuthContext';
+import { ChatSidebar } from '@/components/Chat/ChatSidebar';
+import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from "@/components/ui/resizable";
 
 interface Message {
   id: string;
@@ -17,30 +20,54 @@ interface Message {
   images?: ChatImage[];
 }
 
+interface Conversation {
+  id: string;
+  title: string;
+  created_at: string;
+}
+
 const ChatPage = () => {
   const { projectId } = useParams<{ projectId: string }>();
   const navigate = useNavigate();
-  const [sessionId, setSessionId] = useState<string | null>(null);
+  const { session } = useAuth();
+
+  const [conversations, setConversations] = useState<Conversation[]>([]);
+  const [activeConversationId, setActiveConversationId] = useState<string | null>(null);
+
   const [messages, setMessages] = useState<Message[]>([]);
   const [currentImages, setCurrentImages] = useState<ChatImage[]>([]);
   const [inputMessage, setInputMessage] = useState('');
   const [isStreaming, setIsStreaming] = useState(false);
   const [streamingSteps, setStreamingSteps] = useState<StreamingStep[]>([]);
+
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const eventSourceRef = useRef<EventSource | null>(null);
   const streamingMessageIdRef = useRef<string>('');
 
+  // Fetch conversations on load
   useEffect(() => {
-    if (projectId) {
-      initializeChat();
+    if (projectId && session?.access_token) {
+      loadConversations();
     }
-    
+  }, [projectId, session?.access_token]);
+
+  // Fetch messages when active conversation changes
+  useEffect(() => {
+    if (activeConversationId && session?.access_token) {
+      loadMessages(activeConversationId);
+    } else {
+      setMessages([]);
+    }
+  }, [activeConversationId, session?.access_token]);
+
+  // Clean up event source
+  useEffect(() => {
     return () => {
       if (eventSourceRef.current) {
         eventSourceRef.current.close();
       }
     };
-  }, [projectId]);
+  }, []);
 
   useEffect(() => {
     scrollToBottom();
@@ -50,22 +77,69 @@ const ChatPage = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   };
 
-  const initializeChat = async () => {
-    if (!projectId) return;
-    
+  const loadConversations = async () => {
+    if (!projectId || !session?.access_token) return;
     try {
-      // Now uses project_id instead of document_id
-      const response = await apiService.initializeChat(projectId);
-      setSessionId(response.session_id);
-      toast.success('Chat initialized successfully');
+      const response = await apiService.listConversations(projectId, session.access_token);
+      setConversations(response.conversations);
+
+      // Auto-select most recent if available
+      if (response.conversations.length > 0 && !activeConversationId) {
+        setActiveConversationId(response.conversations[0].id);
+      }
     } catch (error) {
-      toast.error('Failed to initialize chat');
-      console.error(error);
+      toast.error('Failed to load conversations');
+    }
+  };
+
+  const loadMessages = async (conversationId: string) => {
+    if (!session?.access_token) return;
+    try {
+      const response = await apiService.getConversationHistory(conversationId, session.access_token);
+
+      // Map DB messages to UI format
+      const mappedMessages: Message[] = response.messages.map((msg: any) => ({
+        id: msg.id,
+        type: msg.role,
+        content: msg.content,
+        // We might want to parse images if we store them in DB, but for now history is text
+        images: []
+      }));
+      setMessages(mappedMessages);
+    } catch (error) {
+      toast.error('Failed to load messages');
+    }
+  };
+
+  const handleNewChat = async () => {
+    if (!projectId || !session?.access_token) return;
+    try {
+      const response = await apiService.createConversation(projectId, "New Conversation", session.access_token);
+      setConversations([response.conversation, ...conversations]);
+      setActiveConversationId(response.conversation.id);
+      setMessages([]);
+    } catch (error) {
+      toast.error('Failed to create conversation');
+    }
+  };
+
+  const handleDeleteConversation = async (id: string) => {
+    if (!session?.access_token) return;
+    try {
+      await apiService.deleteConversation(id, session.access_token);
+      setConversations(conversations.filter(c => c.id !== id));
+      if (activeConversationId === id) {
+        setActiveConversationId(null);
+        setMessages([]);
+      }
+      toast.success('Conversation deleted');
+    } catch (error) {
+      toast.error('Failed to delete conversation');
     }
   };
 
   const updateStep = (id: string, updates: Partial<StreamingStep>) => {
-    setStreamingSteps(prev => prev.map(step => 
+    setStreamingSteps(prev => prev.map(step =>
       step.id === id ? { ...step, ...updates } : step
     ));
   };
@@ -74,10 +148,22 @@ const ChatPage = () => {
     setStreamingSteps(prev => [...prev, step]);
   };
 
-  const startStreaming = (message: string) => {
-    if (!sessionId) {
-      toast.error('Chat not initialized');
-      return;
+  const startStreaming = async (message: string) => {
+    if (!session?.access_token) return;
+
+    let targetConversationId = activeConversationId;
+
+    // specific check: if no active conversation, create one
+    if (!targetConversationId) {
+      try {
+        const response = await apiService.createConversation(projectId!, message.substring(0, 30) + "...", session.access_token);
+        targetConversationId = response.conversation.id;
+        setConversations([response.conversation, ...conversations]);
+        setActiveConversationId(targetConversationId);
+      } catch (error) {
+        toast.error('Failed to start conversation');
+        return;
+      }
     }
 
     setIsStreaming(true);
@@ -85,7 +171,7 @@ const ChatPage = () => {
     setStreamingSteps([]);
     setCurrentImages([]);
 
-    // Add user message
+    // Add user message locally (it's also saved in DB by backend)
     const userMsg: Message = {
       id: Date.now().toString(),
       type: 'user',
@@ -103,11 +189,14 @@ const ChatPage = () => {
     };
     setMessages(prev => [...prev, assistantMsg]);
 
-    // Connect to SSE
+    // Connect to SSE with Token
     const encodedMessage = encodeURIComponent(message);
-    const eventSource = new EventSource(
-      `http://localhost:8000/api/chat/stream/${sessionId}?message=${encodedMessage}`
-    );
+    const encodedToken = encodeURIComponent(session.access_token);
+
+    // Use new endpoint
+    const url = `http://localhost:8000/api/chat/conversations/${targetConversationId}/message_stream?message=${encodedMessage}&token=${encodedToken}`;
+
+    const eventSource = new EventSource(url);
     eventSourceRef.current = eventSource;
 
     let searchStepId = '';
@@ -120,9 +209,8 @@ const ChatPage = () => {
 
       switch (data.type) {
         case 'connected':
-          // Initial connection
           break;
-          
+
         case 'search_start':
           searchStepId = 'search-' + Date.now();
           addStep({
@@ -133,16 +221,15 @@ const ChatPage = () => {
             details: [data.query || message]
           });
           break;
-          
+
         case 'search_complete':
           if (searchStepId) {
-            updateStep(searchStepId, { 
+            updateStep(searchStepId, {
               status: 'complete',
               label: `Found ${data.chunks_count} relevant sections`
             });
           }
-          
-          // Add reading step
+
           readStepId = 'read-' + Date.now();
           addStep({
             id: readStepId,
@@ -152,12 +239,12 @@ const ChatPage = () => {
             details: data.sources || []
           });
           break;
-          
+
         case 'images_found':
           if (readStepId) {
             updateStep(readStepId, { status: 'complete' });
           }
-          
+
           if (data.count > 0) {
             imagesStepId = 'images-' + Date.now();
             addStep({
@@ -168,17 +255,16 @@ const ChatPage = () => {
             });
           }
           break;
-          
+
         case 'image':
           setCurrentImages(prev => [...prev, { filename: data.filename, data: data.data }]);
           break;
-          
+
         case 'response_start':
-          // Complete reading step if not done
           if (readStepId) {
             updateStep(readStepId, { status: 'complete' });
           }
-          
+
           writeStepId = 'write-' + Date.now();
           addStep({
             id: writeStepId,
@@ -187,34 +273,39 @@ const ChatPage = () => {
             status: 'active'
           });
           break;
-          
+
         case 'content':
-          setMessages(prev => prev.map(msg => 
+          setMessages(prev => prev.map(msg =>
             msg.id === streamingMessageIdRef.current
               ? { ...msg, content: msg.content + data.content }
               : msg
           ));
           break;
-          
+
         case 'complete':
           if (writeStepId) {
             updateStep(writeStepId, { status: 'complete', label: 'Answer complete' });
           }
-          
-          // Attach images to the assistant message
-          setMessages(prev => prev.map(msg => 
+
+          setMessages(prev => prev.map(msg =>
             msg.id === streamingMessageIdRef.current
               ? { ...msg, images: [...(msg.images || []), ...currentImages] }
               : msg
           ));
           break;
-          
+
         case 'end':
           setIsStreaming(false);
-          // Clear streaming steps after a delay
           setTimeout(() => {
             setStreamingSteps([]);
           }, 1000);
+          eventSource.close();
+          break;
+
+        case 'error':
+          console.error('Stream Error:', data.message);
+          toast.error('Stream error: ' + data.message);
+          setIsStreaming(false);
           eventSource.close();
           break;
       }
@@ -234,110 +325,103 @@ const ChatPage = () => {
     startStreaming(inputMessage);
   };
 
-  const handleClearHistory = async () => {
-    if (!sessionId) return;
-    
-    try {
-      await apiService.clearChatHistory(sessionId);
-      setMessages([]);
-      setCurrentImages([]);
-      toast.success('Chat history cleared');
-    } catch (error) {
-      toast.error('Failed to clear history');
-    }
-  };
-
   return (
-    <div className="min-h-screen bg-background">
-      <div className="max-w-4xl mx-auto p-6">
-        {/* Header */}
-        <div className="flex items-center justify-between mb-6">
-          <div className="flex items-center gap-4">
-            <Button
-              variant="ghost"
-              size="icon"
-              onClick={() => navigate(`/project/${projectId}`)}
-            >
-              <ArrowLeft className="w-5 h-5" />
-            </Button>
-            <div>
-              <h1 className="text-2xl font-bold">Project Chat</h1>
-              <p className="text-sm text-muted-foreground">Ask questions about your documents in {projectId}</p>
-            </div>
-          </div>
-          <Button 
-            variant="outline" 
-            size="sm"
-            onClick={handleClearHistory} 
-            disabled={!sessionId || messages.length === 0}
-            className="gap-2"
+    <div className="h-screen bg-background flex flex-col">
+      {/* Header */}
+      <div className="flex items-center justify-between p-4 border-b">
+        <div className="flex items-center gap-4">
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={() => navigate(`/project/${projectId}`)}
           >
-            <Trash2 className="w-4 h-4" />
-            Clear
+            <ArrowLeft className="w-5 h-5" />
           </Button>
+          <div>
+            <h1 className="text-xl font-bold">Project Chat</h1>
+            <p className="text-xs text-muted-foreground">in {projectId}</p>
+          </div>
         </div>
+      </div>
+
+      <ResizablePanelGroup direction="horizontal" className="flex-1">
+        {/* Sidebar */}
+        <ResizablePanel defaultSize={20} minSize={15} maxSize={30} className="hidden md:block">
+          <ChatSidebar
+            conversations={conversations}
+            activeId={activeConversationId}
+            onSelect={setActiveConversationId}
+            onNew={handleNewChat}
+            onDelete={handleDeleteConversation}
+          />
+        </ResizablePanel>
+
+        <ResizableHandle />
 
         {/* Chat Area */}
-        <Card className="p-6 flex flex-col h-[calc(100vh-180px)]">
-          {/* Messages */}
-          <ScrollArea className="flex-1 pr-4 mb-4">
-            <div className="space-y-6">
-              {messages.length === 0 && !isStreaming && (
-                <div className="text-center py-16 text-muted-foreground">
-                  <p className="text-lg mb-2">Start a conversation</p>
-                  <p className="text-sm">Ask questions about your documents and get detailed answers</p>
-                </div>
-              )}
-              
-              {messages.map((msg, index) => {
-                const isLastAssistant = msg.type === 'assistant' && index === messages.length - 1;
-                const showSteps = isLastAssistant && isStreaming && streamingSteps.length > 0;
-                
-                return (
-                  <div key={msg.id}>
-                    {/* Show streaming steps before the assistant's response */}
-                    {showSteps && (
-                      <StreamingSteps steps={streamingSteps} />
-                    )}
-                    
-                    <ChatMessage
-                      type={msg.type}
-                      content={msg.content}
-                      images={msg.images}
-                      isStreaming={isLastAssistant && isStreaming}
-                    />
+        <ResizablePanel defaultSize={80}>
+          <div className="h-full flex flex-col">
+            {/* Messages */}
+            <ScrollArea className="flex-1 p-6">
+              <div className="space-y-6 max-w-4xl mx-auto">
+                {messages.length === 0 && !isStreaming && (
+                  <div className="text-center py-16 text-muted-foreground">
+                    <p className="text-lg mb-2">Start a conversation</p>
+                    <p className="text-sm">Ask detailed questions about your documents.</p>
                   </div>
-                );
-              })}
-              
-              <div ref={messagesEndRef} />
-            </div>
-          </ScrollArea>
+                )}
 
-          {/* Input */}
-          <div className="flex gap-2 pt-4 border-t border-border">
-            <Input
-              value={inputMessage}
-              onChange={(e) => setInputMessage(e.target.value)}
-              onKeyPress={(e) => e.key === 'Enter' && handleSendMessage()}
-              placeholder="Ask a question about your documents..."
-              disabled={isStreaming || !sessionId}
-              className="flex-1"
-            />
-            <Button
-              onClick={handleSendMessage}
-              disabled={isStreaming || !sessionId || !inputMessage.trim()}
-              size="icon"
-            >
-              {isStreaming ? (
-                <Loader2 className="w-4 h-4 animate-spin" />
-              ) : (
-                <Send className="w-4 h-4" />
-              )}
-            </Button>
+                {messages.map((msg, index) => {
+                  const isLastAssistant = msg.type === 'assistant' && index === messages.length - 1;
+                  const showSteps = isLastAssistant && isStreaming && streamingSteps.length > 0;
+
+                  return (
+                    <div key={msg.id}>
+                      {showSteps && (
+                        <StreamingSteps steps={streamingSteps} />
+                      )}
+
+                      <ChatMessage
+                        type={msg.type}
+                        content={msg.content}
+                        images={msg.images}
+                        isStreaming={isLastAssistant && isStreaming}
+                      />
+                    </div>
+                  );
+                })}
+
+                <div ref={messagesEndRef} />
+              </div>
+            </ScrollArea>
+
+            {/* Input */}
+            <div className="p-4 border-t bg-background">
+              <div className="max-w-4xl mx-auto flex gap-2">
+                <Input
+                  value={inputMessage}
+                  onChange={(e) => setInputMessage(e.target.value)}
+                  onKeyPress={(e) => e.key === 'Enter' && handleSendMessage()}
+                  placeholder="Ask a question about your documents..."
+                  disabled={isStreaming}
+                  className="flex-1"
+                />
+                <Button
+                  onClick={handleSendMessage}
+                  disabled={isStreaming || !inputMessage.trim()}
+                  size="icon"
+                >
+                  {isStreaming ? (
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                  ) : (
+                    <Send className="w-4 h-4" />
+                  )}
+                </Button>
+              </div>
+            </div>
           </div>
-        </Card>
-      </div>
+        </ResizablePanel>
+      </ResizablePanelGroup>
     </div>
   );
 };

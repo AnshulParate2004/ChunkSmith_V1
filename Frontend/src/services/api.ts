@@ -72,7 +72,7 @@ class ApiService {
   // NEW: List all projects
   async listProjects(): Promise<{ projects: Project[] }> {
     const response = await fetch(`${API_BASE_URL}/projects`);
-    
+
     if (!response.ok) {
       throw new Error(`Failed to list projects: ${response.statusText}`);
     }
@@ -83,7 +83,7 @@ class ApiService {
   // NEW: Get project details
   async getProjectDetails(projectId: string): Promise<ProjectDetails> {
     const response = await fetch(`${API_BASE_URL}/projects/${projectId}`);
-    
+
     if (!response.ok) {
       throw new Error(`Failed to get project details: ${response.statusText}`);
     }
@@ -115,7 +115,7 @@ class ApiService {
     console.log('Project ID:', projectId);
     console.log('Selected language code:', settings.languages);
     console.log('Full settings:', settings);
-    
+
     const queryParams = new URLSearchParams({
       project_id: projectId,
       max_characters: String(settings.maxCharacters),
@@ -173,7 +173,7 @@ class ApiService {
   async downloadDocument(documentId: string) {
     const response = await fetch(`${API_BASE_URL}/documents?document_id=${documentId}`);
     const blob = await response.blob();
-    
+
     const url = window.URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
@@ -186,13 +186,13 @@ class ApiService {
 
   async downloadProjectData(projectId: string) {
     const response = await fetch(`${API_BASE_URL}/download-project/${projectId}`);
-    
+
     if (!response.ok) {
       throw new Error(`Download failed: ${response.statusText}`);
     }
-    
+
     const blob = await response.blob();
-    
+
     const url = window.URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
@@ -205,13 +205,13 @@ class ApiService {
 
   async downloadAllData() {
     const response = await fetch(`${API_BASE_URL}/download-all`);
-    
+
     if (!response.ok) {
       throw new Error(`Download failed: ${response.statusText}`);
     }
-    
+
     const blob = await response.blob();
-    
+
     const url = window.URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
@@ -225,11 +225,11 @@ class ApiService {
   // UPDATED: Now uses project_id path
   async getDocumentChunks(projectId: string, documentId: string, includeImages: boolean = true): Promise<DocumentChunksResponse> {
     const response = await fetch(`${API_BASE_URL}/projects/${projectId}/documents/${documentId}/chunks?include_images=${includeImages}`);
-    
+
     if (!response.ok) {
       throw new Error(`Failed to fetch chunks: ${response.statusText}`);
     }
-    
+
     return response.json();
   }
 
@@ -261,6 +261,60 @@ class ApiService {
   // NEW: Get image with project context
   getImageUrl(projectId: string, filename: string): string {
     return `${API_BASE_URL}/projects/${projectId}/images/${filename}`;
+  }
+
+  // ============================================
+  // CONVERSATION ENDPOINTS
+  // ============================================
+
+  async createConversation(projectId: string, title?: string, token?: string): Promise<{ success: boolean; conversation: any }> {
+    const headers: HeadersInit = {
+      'Content-Type': 'application/json',
+    };
+    if (token) headers['Authorization'] = `Bearer ${token}`;
+
+    const response = await fetch(`${API_BASE_URL}/chat/conversations`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ project_id: projectId, title }),
+    });
+
+    if (!response.ok) throw new Error('Failed to create conversation');
+    return response.json();
+  }
+
+  async listConversations(projectId?: string, token?: string): Promise<{ success: boolean; conversations: any[] }> {
+    const headers: HeadersInit = {};
+    if (token) headers['Authorization'] = `Bearer ${token}`;
+
+    const url = new URL(`${API_BASE_URL}/chat/conversations`);
+    if (projectId) url.searchParams.append('project_id', projectId);
+
+    const response = await fetch(url.toString(), { headers });
+    if (!response.ok) throw new Error('Failed to list conversations');
+    return response.json();
+  }
+
+  async getConversationHistory(conversationId: string, token?: string): Promise<{ success: boolean; messages: any[] }> {
+    const headers: HeadersInit = {};
+    if (token) headers['Authorization'] = `Bearer ${token}`;
+
+    const response = await fetch(`${API_BASE_URL}/chat/conversations/${conversationId}/messages`, { headers });
+    if (!response.ok) throw new Error('Failed to get conversation history');
+    return response.json();
+  }
+
+  async deleteConversation(conversationId: string, token?: string): Promise<{ success: boolean }> {
+    const headers: HeadersInit = {};
+    if (token) headers['Authorization'] = `Bearer ${token}`;
+
+    const response = await fetch(`${API_BASE_URL}/chat/conversations/${conversationId}`, {
+      method: 'DELETE',
+      headers,
+    });
+
+    if (!response.ok) throw new Error('Failed to delete conversation');
+    return response.json();
   }
 }
 
