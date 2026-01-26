@@ -295,7 +295,7 @@ TEXT CONTENT:
         
         return responses
     
-    def summarise_chunks(self, chunks) -> List[Document]:
+    async def summarise_chunks(self, chunks) -> List[Document]:
         """
         Process all chunks with AI Summaries using multiple API keys asynchronously.
         
@@ -360,8 +360,8 @@ TEXT CONTENT:
         # print(f"Using {len(self.api_keys)} API key(s)")
         # print(f"Processing {total_chunks} chunk(s)")
         
-        # Run async processing
-        ai_responses = asyncio.run(self.process_chunks_async(chunks_data))
+        # Await async processing directly (no asyncio.run since we're already in async context)
+        ai_responses = await self.process_chunks_async(chunks_data)
         
         # Step 3: Create LangChain documents
         # print(f"\nCreating LangChain documents...")

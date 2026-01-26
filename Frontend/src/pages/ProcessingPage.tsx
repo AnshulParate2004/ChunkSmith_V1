@@ -21,14 +21,14 @@ interface SavedProcessingData {
 const ProcessingPage = () => {
   const { documentId } = useParams<{ documentId: string }>();
   const navigate = useNavigate();
-  
+
   // Check if we have saved data for this document
   const [hasSavedData, setHasSavedData] = useState(false);
   const [savedData, setSavedData] = useState<SavedProcessingData | null>(null);
   const [showViewModal, setShowViewModal] = useState(false);
-  
+
   const { messages, connected, error } = useSSE(hasSavedData ? null : (documentId || null));
-  
+
   const [currentStep, setCurrentStep] = useState(1);
   const [progress, setProgress] = useState(0);
   const [statusMessage, setStatusMessage] = useState('Initializing...');
@@ -60,7 +60,7 @@ const ProcessingPage = () => {
   // Timer that stops when complete
   useEffect(() => {
     if (hasSavedData) return; // Don't start timer if we have saved data
-    
+
     timerRef.current = setInterval(() => {
       setProcessingTime((prev) => prev + 1);
     }, 1000);
@@ -131,11 +131,15 @@ const ProcessingPage = () => {
 
   const handleDownload = async () => {
     try {
-      const projectId = localStorage.getItem('currentProjectId');
-      if (projectId) {
-        await apiService.downloadProjectData(projectId);
+      if (documentId) {
+        await apiService.downloadDocument(documentId);
       } else {
-        await apiService.downloadAllData();
+        const projectId = localStorage.getItem('currentProjectId');
+        if (projectId) {
+          await apiService.downloadProjectData(projectId);
+        } else {
+          await apiService.downloadAllData();
+        }
       }
       toast.success('Download started');
     } catch (error) {
@@ -171,14 +175,14 @@ const ProcessingPage = () => {
           onClose={() => setShowViewModal(false)}
         />
       )}
-      
+
       <div className="container mx-auto px-6 py-8 max-w-5xl">
         <div className="space-y-8 animate-fade-in">
           <Button variant="ghost" onClick={handleBack} className="mb-4">
             <ArrowLeft className="w-4 h-4 mr-2" />
             Back to Project
           </Button>
-          
+
           <div className="glass-card p-8">
             <div className="flex items-center justify-between mb-8">
               <div>
@@ -205,7 +209,7 @@ const ProcessingPage = () => {
           {isComplete && result && (
             <div className="glass-card p-6 space-y-4">
               <h3 className="text-xl font-bold">Processing Complete</h3>
-              
+
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 <div className="p-4 bg-primary/10 rounded-lg">
                   <p className="text-sm text-muted-foreground">Chunks Processed</p>

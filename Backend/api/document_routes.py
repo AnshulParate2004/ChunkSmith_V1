@@ -3,17 +3,20 @@ import os
 import json
 import asyncio
 import tempfile
+import shutil
 from datetime import datetime
 from typing import AsyncGenerator, Dict
 from pathlib import Path
-from fastapi import APIRouter, UploadFile, File, HTTPException, BackgroundTasks, Query
+from fastapi import APIRouter, UploadFile, File, HTTPException, BackgroundTasks, Query, Depends
 from fastapi.responses import FileResponse, StreamingResponse
 from config.settings import settings
 from core.document_parser import DocumentParser
 from core.content_processor import ContentProcessor
 from utils.file_helpers import FileHandler
 from utils.storage import StorageManager
+from utils.vector_store import VectorStoreManager
 from api.shared import processing_status, send_sse_message
+from api.auth_routes import get_current_user
 
 router = APIRouter(tags=["Document Processing"])
 
@@ -27,6 +30,7 @@ async def initiate_pdf_processing(
     project_id: str = Query(..., description="Project ID where this PDF belongs"),
     file: UploadFile = File(...),
     background_tasks: BackgroundTasks = None,
+    user = Depends(get_current_user),
     max_characters: int = settings.MAX_CHARACTERS,
     new_after_n_chars: int = settings.NEW_AFTER_N_CHARS,
     combine_text_under_n_chars: int = settings.COMBINE_TEXT_UNDER_N_CHARS,
@@ -117,7 +121,7 @@ async def initiate_pdf_processing(
 
 
 @router.get("/process-pdf-stream/{document_id}")
-async def stream_pdf_processing(document_id: str): 
+async def stream_pdf_processing(document_id: str, user = Depends(get_current_user)): 
     """Stream processing updates via Server-Sent Events (SSE)"""
     
     async def event_generator() -> AsyncGenerator[str, None]:
@@ -195,7 +199,8 @@ async def stream_pdf_processing(document_id: str):
 async def view_processed_chunks(
     project_id: str,
     document_id: str,
-    include_images: bool = True
+    include_images: bool = True,
+    user = Depends(get_current_user)
 ):
     """View processed chunks for a specific document"""
     try:
@@ -330,7 +335,7 @@ async def view_processed_chunks(
 
 
 @router.get("/projects/{project_id}/images/{image_filename}")
-async def get_project_image(project_id: str, image_filename: str):
+async def get_project_image(project_id: str, image_filename: str, user = Depends(get_current_user)):
     """Get a specific image from a project"""
     try:
         from pathlib import Path
@@ -472,8 +477,8 @@ async def process_pdf_background(
         # We need to ensure ContentProcessor handles paths correctly for Supabase upload
         processor = ContentProcessor(
             image_dir=str(image_dir), 
-            model_name=settings.AI_MODEL, 
-            temperature=settings.AI_TEMPERATURE,
+            model_name=settings.GEMINI_MODEL, 
+            temperature=settings.TEMPERATURE,
             project_id=project_id
         )
         
@@ -486,7 +491,7 @@ async def process_pdf_background(
             "message": "Step 4: Generative AI Summarization (Multi-threaded & Multi-Key)..."
         })
         
-        langchain_documents = processor.summarise_chunks(chunks)
+        langchain_documents = await processor.summarise_chunks(chunks)
         
         # Save processed chunks locally first (JSON)
         processed_data = []
@@ -505,9 +510,10 @@ async def process_pdf_background(
                     doc_dict[key] = doc.metadata[key]
             
             processed_data.append(doc_dict)
-            
+        
         json_path = os.path.join(json_dir, f"{document_id}_processed.json")
-        FileHandler.save_json(processed_data, json_path)
+        with open(json_path, 'w', encoding='utf-8') as f:
+            json.dump(processed_data, f, indent=4, ensure_ascii=False)
         
         processing_status[document_id].update({
             "progress": 80,

@@ -30,7 +30,7 @@ class TitleUpdateRequest(BaseModel):
 # ============================================
 
 @router.post("/init/{project_id}")
-async def initialize_chat(project_id: str):
+async def initialize_chat(project_id: str, user = Depends(get_current_user)):
     """Initialize a chat session for a project"""
     try:
         # Check if project exists (basic check via settings)

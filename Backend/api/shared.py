@@ -2,10 +2,11 @@
 from datetime import datetime
 from typing import Dict, Optional, List
 from pydantic import BaseModel
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Depends
 from core.chat_agent import ChatAgent
 from config.settings import settings
 from utils.vector_store import VectorStoreManager
+from api.auth_routes import get_current_user
 import json
 
 # Create router for simple routes
@@ -63,13 +64,8 @@ async def send_sse_message(message_type: str, data: dict) -> str:
     }
     return f"data: {json.dumps(message)}\n\n"
 
-
-# ============================================
-# SEARCH ROUTE (Simple, kept with shared models)
-# ============================================
-
 @router.post("/search")
-async def search_documents(request: SearchRequest):
+async def search_documents(request: SearchRequest, user = Depends(get_current_user)):
     """Search documents within a specific project"""
     try:
         vector_manager = VectorStoreManager(embedding_model=settings.EMBEDDING_MODEL)

@@ -26,11 +26,7 @@ const SearchPage = () => {
       setIsLoadingProjects(true);
       const response = await apiService.listProjects();
       setProjects(response.projects || []);
-      // Auto-select the current project if available
-      const currentProjectId = localStorage.getItem('currentProjectId');
-      if (currentProjectId && response.projects?.some(p => p.project_id === currentProjectId)) {
-        setProjectId(currentProjectId);
-      }
+      // No auto-selection - user must choose project manually
     } catch (error) {
       console.error('Failed to load projects:', error);
     } finally {

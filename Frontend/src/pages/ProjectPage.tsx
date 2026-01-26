@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { Plus, MessageSquare, Globe, Settings, FileText, Sparkles, Upload, Search, X, Clock, CheckCircle, Loader2, ArrowLeft } from 'lucide-react';
+import { Plus, MessageSquare, Globe, Settings, FileText, Sparkles, Upload, Search, X, Clock, CheckCircle, Loader2, ArrowLeft, Download, Eye } from 'lucide-react';
 import { ChatInterface } from '@/components/Chat/ChatInterface';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -56,42 +56,31 @@ const ProjectPage = () => {
   }, [settings]);
 
   useEffect(() => {
-    if (projectId) {
-      // Ensure subsequent uploads & "Back" navigation resolve to the correct project
-      localStorage.setItem('currentProjectId', projectId);
-    }
+    // Fetch documents from API instead of localStorage
+    const loadDocuments = async () => {
+      if (!projectId) return;
 
-    const loadDocuments = () => {
-      const savedDocs = localStorage.getItem(`project_${projectId}_docs`);
-      if (savedDocs) {
-        let docs: UploadedDoc[] = JSON.parse(savedDocs);
-        let hasUpdates = false;
-
-        docs = docs.map(doc => {
-          if (doc.status === 'processing') {
-            const processingData = localStorage.getItem(`processing_${doc.documentId}`);
-            if (processingData) {
-              hasUpdates = true;
-              return { ...doc, status: 'complete' as const };
-            }
-          }
-          return doc;
-        });
-
-        if (hasUpdates) {
-          localStorage.setItem(`project_${projectId}_docs`, JSON.stringify(docs));
-        }
+      try {
+        const response = await apiService.getProjectDetails(projectId);
+        // Map API response to UploadedDoc format
+        const docs: UploadedDoc[] = response.pdf_files?.map((pdf: any) => ({
+          name: pdf.filename,
+          size: pdf.size_mb * 1024 * 1024, // Convert MB to bytes
+          documentId: pdf.filename.replace('.pdf', ''),
+          uploadedAt: pdf.created_at || new Date().toISOString(),
+          status: 'complete' as const,
+          projectId: projectId
+        })) || [];
 
         setUploadedDocs(docs);
-      } else {
-        // Keep UI consistent even when there are no docs yet
+      } catch (error) {
+        console.error('Failed to load documents:', error);
         setUploadedDocs([]);
       }
     };
 
+    // Load documents only once when page loads
     loadDocuments();
-    const interval = setInterval(loadDocuments, 1000);
-    return () => clearInterval(interval);
   }, [projectId]);
 
   const projectTitle = projectId || 'Project';
@@ -167,29 +156,13 @@ const ProjectPage = () => {
     try {
       const result = await apiService.uploadPDF(selectedFile, settings, projectId!);
 
-      // Map document → project for reliable "Back to Project" behavior
-      localStorage.setItem(`doc_${result.document_id}_project`, projectId!);
-
       toast({
         title: "File uploaded successfully!",
         description: `Processing document: ${selectedFile.name} (Language: ${settings.languages})`,
       });
 
-      const newDoc: UploadedDoc = {
-        name: selectedFile.name,
-        size: selectedFile.size,
-        documentId: result.document_id,
-        uploadedAt: new Date().toISOString(),
-        status: 'processing',
-        projectId: projectId
-      };
-
-      const updatedDocs = [...uploadedDocs, newDoc];
-      setUploadedDocs(updatedDocs);
-      localStorage.setItem(`project_${projectId}_docs`, JSON.stringify(updatedDocs));
-
       setSelectedFile(null);
-      navigate(`/processing/${result.document_id}`);
+      navigate(`/processing/${result.document_id}?projectId=${projectId}`);
     } catch (error) {
       console.error('❌ Upload error:', error);
       toast({
@@ -325,10 +298,16 @@ const ProjectPage = () => {
                     <h3 className="text-lg font-semibold">Conversations</h3>
                     <span className="text-sm text-muted-foreground">{conversations.length}</span>
                   </div>
-                  <Button className="gap-2" onClick={handleNewConversation}>
-                    <Plus className="w-4 h-4" />
-                    New conversation
-                  </Button>
+                  <div className="flex gap-2">
+                    <Button variant="outline" className="gap-2" onClick={() => apiService.downloadProjectData(projectId!)}>
+                      <Download className="w-4 h-4" />
+                      Download Project
+                    </Button>
+                    <Button className="gap-2" onClick={handleNewConversation}>
+                      <Plus className="w-4 h-4" />
+                      New conversation
+                    </Button>
+                  </div>
                 </div>
 
                 {conversations.length === 0 && uploadedDocs.length === 0 ? (

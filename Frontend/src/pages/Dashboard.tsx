@@ -36,11 +36,7 @@ const Dashboard = () => {
         } catch (error) {
             console.error('Failed to load projects:', error);
             toast.error('Failed to load projects from server');
-            // Fallback to localStorage for offline mode
-            const savedProjects = localStorage.getItem('projects');
-            if (savedProjects) {
-                setProjects(JSON.parse(savedProjects));
-            }
+            setProjects([]);
         } finally {
             setIsLoading(false);
         }
@@ -182,7 +178,6 @@ const Dashboard = () => {
                                     <Link
                                         key={project.project_id}
                                         to={`/project/${project.project_id}`}
-                                        onClick={() => localStorage.setItem('currentProjectId', project.project_id)}
                                     >
                                         <Card className="p-6 bg-card/50 backdrop-blur-sm border-border/50 hover:border-primary/50 transition-all duration-300 hover:scale-105 cursor-pointer group relative">
                                             <button

@@ -1,5 +1,6 @@
 """Authentication API routes and dependencies"""
-from fastapi import APIRouter, HTTPException, Depends, status
+from typing import Optional
+from fastapi import APIRouter, HTTPException, Depends, status, Query
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from pydantic import BaseModel
 from supabase import create_client, Client
@@ -7,8 +8,8 @@ from config.settings import settings
 
 router = APIRouter(prefix="/auth", tags=["Authentication"])
 
-# Define HTTP Bearer scheme
-security = HTTPBearer()
+# Define HTTP Bearer scheme (auto_error=False to allow checking query param)
+security = HTTPBearer(auto_error=False)
 
 
 # ============================================
@@ -26,12 +27,26 @@ def get_supabase_client() -> Client:
 
 
 async def get_current_user(
-    credentials: HTTPAuthorizationCredentials = Depends(security)
+    credentials: Optional[HTTPAuthorizationCredentials] = Depends(security),
+    token_query: Optional[str] = Query(None, alias="token")
 ):
     """
-    Validate the JWT token and return the user object.
+    Validate the JWT token from Header (Bearer) OR Query Param (token).
+    Returns the user object.
     """
-    token = credentials.credentials
+    token = None
+    if credentials:
+        token = credentials.credentials
+    elif token_query:
+        token = token_query
+        
+    if not token:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Missing authentication credentials",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
     supabase = get_supabase_client()
 
     try:

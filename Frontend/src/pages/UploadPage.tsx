@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useParams } from 'react-router-dom';
 import { FileUpload } from '@/components/Upload/FileUpload';
 import { UploadSettings } from '@/components/Upload/UploadSettings';
 import { Button } from '@/components/ui/button';
@@ -9,6 +9,7 @@ import { Loader2 } from 'lucide-react';
 
 const UploadPage = () => {
   const navigate = useNavigate();
+  const { projectId } = useParams<{ projectId: string }>();
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [isUploading, setIsUploading] = useState(false);
   const [settings, setSettings] = useState<ProcessSettings>({
@@ -26,37 +27,19 @@ const UploadPage = () => {
       return;
     }
 
-    const currentProjectId = localStorage.getItem('currentProjectId');
-    if (!currentProjectId) {
-      toast.error('Please select a project first');
-      navigate('/');
+    if (!projectId) {
+      toast.error('Project ID is missing');
+      navigate('/dashboard');
       return;
     }
 
     setIsUploading(true);
     try {
-      // Now passes project_id to the API
-      const response = await apiService.uploadPDF(selectedFile, settings, currentProjectId);
+      const response = await apiService.uploadPDF(selectedFile, settings, projectId);
       toast.success('Upload started successfully');
 
-      // Attach this document to the currently selected project
-      const projectDocsKey = `project_${currentProjectId}_docs`;
-      const existingDocs = JSON.parse(localStorage.getItem(projectDocsKey) || '[]');
-      const newDoc = {
-        name: selectedFile.name,
-        size: selectedFile.size,
-        documentId: response.document_id,
-        uploadedAt: new Date().toISOString(),
-        status: 'processing',
-        projectId: currentProjectId,
-      };
-      const updatedDocs = [...existingDocs, newDoc];
-      localStorage.setItem(projectDocsKey, JSON.stringify(updatedDocs));
-
-      // Map document → project for reliable "Back to Project" behavior
-      localStorage.setItem(`doc_${response.document_id}_project`, currentProjectId);
-
-      navigate(`/processing/${response.document_id}`);
+      // Navigate to processing page
+      navigate(`/processing/${response.document_id}?projectId=${projectId}`);
     } catch (error: any) {
       toast.error(error.message || 'Upload failed');
       console.error('Upload error:', error);

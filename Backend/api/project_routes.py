@@ -4,18 +4,19 @@ import shutil
 import tempfile
 import zipfile
 import os
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, HTTPException, Query, Depends
 from fastapi.responses import FileResponse
 from config.settings import settings
 from utils.storage import StorageManager
 from utils.vector_store import VectorStoreManager
 from api.shared import ProjectCreateRequest
+from api.auth_routes import get_current_user
 
 router = APIRouter(prefix="/projects", tags=["Project Management"])
 
 
 @router.post("")
-async def create_project(request: ProjectCreateRequest):
+async def create_project(request: ProjectCreateRequest, user = Depends(get_current_user)):
     """Create a new project (Virtual/Supabase-backed)"""
     try:
         # Sanitize project name
@@ -61,7 +62,8 @@ async def create_project(request: ProjectCreateRequest):
 
 
 @router.get("")
-async def list_projects():
+async def list_projects(
+    user = Depends(get_current_user),):
     """List all projects (from Supabase)"""
     try:
         storage_mgr = StorageManager()
@@ -107,7 +109,7 @@ async def list_projects():
 
 
 @router.get("/{project_id}")
-async def get_project_details(project_id: str):
+async def get_project_details(project_id: str, user = Depends(get_current_user)):
     """Get detailed information about a project (from Supabase)"""
     try:
         storage_mgr = StorageManager()
@@ -174,7 +176,7 @@ async def get_project_details(project_id: str):
 
 
 @router.delete("/{project_id}")
-async def delete_project(project_id: str):
+async def delete_project(project_id: str, user = Depends(get_current_user)):
     """Delete an entire project and all its data (Supabase + Local)"""
     try:
         # 1. Supabase Storage Cleanup
@@ -216,7 +218,7 @@ async def delete_project(project_id: str):
 
 
 @router.get("/download-all")
-async def download_all_projects():
+async def download_all_projects(user = Depends(get_current_user)):
     """Download ALL projects data as a single ZIP file"""
     try:
         projects = settings.list_projects()
@@ -259,7 +261,7 @@ async def download_all_projects():
 
 
 @router.get("/download-project/{project_id}")
-async def download_project_data(project_id: str):
+async def download_project_data(project_id: str, user = Depends(get_current_user)):
     """Download all data for a specific project as ZIP"""
     try:
         project_dir = settings.get_project_dir(project_id)
@@ -289,7 +291,7 @@ async def download_project_data(project_id: str):
 
 
 @router.get("/download-project-documents/{project_id}")
-async def download_project_documents_only(project_id: str):
+async def download_project_documents_only(project_id: str, user = Depends(get_current_user)):
     """Download only the processed documents (JSON files) for a specific project"""
     try:
         json_dir = settings.get_project_json_dir(project_id)

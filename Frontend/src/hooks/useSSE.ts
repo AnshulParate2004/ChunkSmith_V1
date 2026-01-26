@@ -37,9 +37,21 @@ export const useSSE = (documentId: string | null) => {
 
     const connect = () => {
       try {
-        const eventSource = new EventSource(
-          `${API_BASE_URL}/process-pdf-stream/${documentId}`
-        );
+        // Get auth token from session
+        const session = localStorage.getItem('session');
+        let token = null;
+        if (session) {
+          try {
+            const parsed = JSON.parse(session);
+            token = parsed.access_token;
+          } catch (e) {
+            console.error('Failed to parse session for SSE', e);
+          }
+        }
+
+        const url = `${API_BASE_URL}/process-pdf-stream/${documentId}${token ? `?token=${token}` : ''}`;
+        const eventSource = new EventSource(url);
+
         eventSourceRef.current = eventSource;
 
         eventSource.onopen = () => {
@@ -52,12 +64,12 @@ export const useSSE = (documentId: string | null) => {
           try {
             const data = JSON.parse(event.data);
             console.log('SSE message:', data);
-            
+
             const message: SSEMessage = {
               type: data.type || 'progress',
               data: data.data || data
             };
-            
+
             setMessages((prev) => [...prev, message]);
           } catch (err) {
             console.error('Failed to parse SSE message:', err);
@@ -67,7 +79,7 @@ export const useSSE = (documentId: string | null) => {
         eventSource.onerror = (event) => {
           console.error('SSE error:', event);
           setConnected(false);
-          
+
           // Check if the connection was closed normally (completed/failed)
           if (eventSource.readyState === EventSource.CLOSED) {
             console.log('SSE connection closed');

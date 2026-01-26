@@ -39,6 +39,12 @@ export interface ProjectDetails {
   chunks_in_db: number;
   image_count: number;
   documents: string[];
+  pdf_files?: Array<{
+    filename: string;
+    size_mb: number;
+    created_at?: string;
+    id?: string;
+  }>;
 }
 
 class ApiService {
@@ -213,12 +219,16 @@ class ApiService {
   }
 
   async getDocuments() {
-    const response = await fetch(`${API_BASE_URL}/documents`);
+    const response = await fetch(`${API_BASE_URL}/documents`, {
+      headers: this.getAuthHeaders()
+    });
     return response.json();
   }
 
   async downloadDocument(documentId: string) {
-    const response = await fetch(`${API_BASE_URL}/documents?document_id=${documentId}`);
+    const response = await fetch(`${API_BASE_URL}/documents?document_id=${documentId}`, {
+      headers: this.getAuthHeaders()
+    });
     const blob = await response.blob();
 
     const url = window.URL.createObjectURL(blob);
@@ -232,7 +242,9 @@ class ApiService {
   }
 
   async downloadProjectData(projectId: string) {
-    const response = await fetch(`${API_BASE_URL}/download-project/${projectId}`);
+    const response = await fetch(`${API_BASE_URL}/projects/download-project/${projectId}`, {
+      headers: this.getAuthHeaders()
+    });
 
     if (!response.ok) {
       throw new Error(`Download failed: ${response.statusText}`);
@@ -251,7 +263,9 @@ class ApiService {
   }
 
   async downloadAllData() {
-    const response = await fetch(`${API_BASE_URL}/download-all`);
+    const response = await fetch(`${API_BASE_URL}/projects/download-all`, {
+      headers: this.getAuthHeaders()
+    });
 
     if (!response.ok) {
       throw new Error(`Download failed: ${response.statusText}`);
@@ -271,7 +285,9 @@ class ApiService {
 
   // UPDATED: Now uses project_id path
   async getDocumentChunks(projectId: string, documentId: string, includeImages: boolean = true): Promise<DocumentChunksResponse> {
-    const response = await fetch(`${API_BASE_URL}/projects/${projectId}/documents/${documentId}/chunks?include_images=${includeImages}`);
+    const response = await fetch(`${API_BASE_URL}/projects/${projectId}/documents/${documentId}/chunks?include_images=${includeImages}`, {
+      headers: this.getAuthHeaders()
+    });
 
     if (!response.ok) {
       throw new Error(`Failed to fetch chunks: ${response.statusText}`);
@@ -284,6 +300,7 @@ class ApiService {
   async initializeChat(projectId: string) {
     const response = await fetch(`${API_BASE_URL}/chat/init/${projectId}`, {
       method: 'POST',
+      headers: this.getAuthHeaders(),
     });
 
     if (!response.ok) {
@@ -308,7 +325,10 @@ class ApiService {
 
   // NEW: Get image with project context
   getImageUrl(projectId: string, filename: string): string {
-    return `${API_BASE_URL}/projects/${projectId}/images/${filename}`;
+    const token = this.getAuthToken();
+    const cleanFilename = filename.split('?')[0]; // Ensure no double query params
+    const url = `${API_BASE_URL}/projects/${projectId}/images/${cleanFilename}`;
+    return token ? `${url}?token=${token}` : url;
   }
 
   // ============================================
