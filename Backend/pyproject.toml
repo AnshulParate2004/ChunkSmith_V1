@@ -26,4 +26,5 @@ dependencies = [
     "uvicorn>=0.40.0",
     "supabase>=2.3.0",
     "qdrant-client>=1.7.0",
+    "langchain-qdrant>=1.1.0",
 ]

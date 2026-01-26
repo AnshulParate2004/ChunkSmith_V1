@@ -42,6 +42,40 @@ export interface ProjectDetails {
 }
 
 class ApiService {
+  private getAuthHeaders(): HeadersInit {
+    const session = localStorage.getItem('session');
+    const headers: HeadersInit = {
+      'Content-Type': 'application/json',
+    };
+
+    if (session) {
+      try {
+        const parsedSession = JSON.parse(session);
+        if (parsedSession.access_token) {
+          headers['Authorization'] = `Bearer ${parsedSession.access_token}`;
+        }
+      } catch (e) {
+        console.error('Failed to parse session:', e);
+      }
+    }
+
+    return headers;
+  }
+
+  private getAuthToken(): string | null {
+    const session = localStorage.getItem('session');
+    if (session) {
+      try {
+        const parsedSession = JSON.parse(session);
+        return parsedSession.access_token || null;
+      } catch (e) {
+        console.error('Failed to parse session:', e);
+        return null;
+      }
+    }
+    return null;
+  }
+
   async healthCheck() {
     const response = await fetch(`${API_BASE_URL}/health`);
     return response.json();
@@ -56,9 +90,7 @@ class ApiService {
   async createProject(projectName: string): Promise<{ project_id: string }> {
     const response = await fetch(`${API_BASE_URL}/projects`, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
+      headers: this.getAuthHeaders(),
       body: JSON.stringify({ project_name: projectName }),
     });
 
@@ -71,7 +103,9 @@ class ApiService {
 
   // NEW: List all projects
   async listProjects(): Promise<{ projects: Project[] }> {
-    const response = await fetch(`${API_BASE_URL}/projects`);
+    const response = await fetch(`${API_BASE_URL}/projects`, {
+      headers: this.getAuthHeaders()
+    });
 
     if (!response.ok) {
       throw new Error(`Failed to list projects: ${response.statusText}`);
@@ -82,7 +116,9 @@ class ApiService {
 
   // NEW: Get project details
   async getProjectDetails(projectId: string): Promise<ProjectDetails> {
-    const response = await fetch(`${API_BASE_URL}/projects/${projectId}`);
+    const response = await fetch(`${API_BASE_URL}/projects/${projectId}`, {
+      headers: this.getAuthHeaders()
+    });
 
     if (!response.ok) {
       throw new Error(`Failed to get project details: ${response.statusText}`);
@@ -96,9 +132,7 @@ class ApiService {
     const encodedProjectId = encodeURIComponent(projectId);
     const response = await fetch(`${API_BASE_URL}/projects/${encodedProjectId}`, {
       method: 'DELETE',
-      headers: {
-        'Content-Type': 'application/json',
-      },
+      headers: this.getAuthHeaders(),
     });
 
     if (!response.ok) {
@@ -134,8 +168,23 @@ class ApiService {
     const url = `${API_BASE_URL}/process-pdf?${queryParams.toString()}`;
     console.log('📤 POST URL:', url);
 
+    // Get auth headers (excluding Content-Type for FormData)
+    const session = localStorage.getItem('session');
+    const headers: HeadersInit = {};
+    if (session) {
+      try {
+        const parsedSession = JSON.parse(session);
+        if (parsedSession.access_token) {
+          headers['Authorization'] = `Bearer ${parsedSession.access_token}`;
+        }
+      } catch (e) {
+        console.error('Failed to parse session:', e);
+      }
+    }
+
     const response = await fetch(url, {
       method: 'POST',
+      headers,
       body: formData,
     });
 
@@ -152,9 +201,7 @@ class ApiService {
   async search(query: SearchQuery) {
     const response = await fetch(`${API_BASE_URL}/search`, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
+      headers: this.getAuthHeaders(),
       body: JSON.stringify(query),
     });
 
@@ -249,6 +296,7 @@ class ApiService {
   async clearChatHistory(sessionId: string) {
     const response = await fetch(`${API_BASE_URL}/chat/clear/${sessionId}`, {
       method: 'POST',
+      headers: this.getAuthHeaders(),
     });
 
     if (!response.ok) {
@@ -261,6 +309,59 @@ class ApiService {
   // NEW: Get image with project context
   getImageUrl(projectId: string, filename: string): string {
     return `${API_BASE_URL}/projects/${projectId}/images/${filename}`;
+  }
+
+  // ============================================
+  // AUTHENTICATION ENDPOINTS
+  // ============================================
+
+  async login(email: string, password: string): Promise<{ success: boolean; user: any; session: any }> {
+    const response = await fetch(`${API_BASE_URL}/auth/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, password }),
+    });
+
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({ detail: 'Login failed' }));
+      throw new Error(error.detail || 'Login failed');
+    }
+
+    return response.json();
+  }
+
+  async signup(email: string, password: string): Promise<{ success: boolean; message: string }> {
+    const response = await fetch(`${API_BASE_URL}/auth/signup`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, password }),
+    });
+
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({ detail: 'Signup failed' }));
+      throw new Error(error.detail || 'Signup failed');
+    }
+
+    return response.json();
+  }
+
+  async logout(token: string): Promise<{ success: boolean }> {
+    const response = await fetch(`${API_BASE_URL}/auth/logout`, {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${token}` },
+    });
+
+    if (!response.ok) throw new Error('Logout failed');
+    return response.json();
+  }
+
+  async getSession(token: string): Promise<{ success: boolean; user: any }> {
+    const response = await fetch(`${API_BASE_URL}/auth/session`, {
+      headers: { 'Authorization': `Bearer ${token}` },
+    });
+
+    if (!response.ok) throw new Error('Session check failed');
+    return response.json();
   }
 
   // ============================================

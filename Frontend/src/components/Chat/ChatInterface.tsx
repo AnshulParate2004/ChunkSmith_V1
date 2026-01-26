@@ -35,7 +35,7 @@ export const ChatInterface = ({ documentId, projectId }: ChatInterfaceProps) => 
     if (projectId) {
       initializeChat();
     }
-    
+
     return () => {
       if (eventSourceRef.current) {
         eventSourceRef.current.close();
@@ -53,7 +53,7 @@ export const ChatInterface = ({ documentId, projectId }: ChatInterfaceProps) => 
 
   const initializeChat = async () => {
     if (!projectId) return;
-    
+
     try {
       // Use projectId for chat initialization (backend expects project_id)
       const response = await apiService.initializeChat(projectId);
@@ -66,7 +66,7 @@ export const ChatInterface = ({ documentId, projectId }: ChatInterfaceProps) => 
   };
 
   const updateStep = (id: string, updates: Partial<StreamingStep>) => {
-    setStreamingSteps(prev => prev.map(step => 
+    setStreamingSteps(prev => prev.map(step =>
       step.id === id ? { ...step, ...updates } : step
     ));
   };
@@ -78,6 +78,25 @@ export const ChatInterface = ({ documentId, projectId }: ChatInterfaceProps) => 
   const startStreaming = (message: string) => {
     if (!sessionId) {
       toast.error('Chat not initialized');
+      return;
+    }
+
+    // Get auth token from localStorage
+    const session = localStorage.getItem('session');
+    let token = '';
+    if (session) {
+      try {
+        const parsedSession = JSON.parse(session);
+        token = parsedSession.access_token || '';
+      } catch (e) {
+        console.error('Failed to parse session:', e);
+        toast.error('Authentication error');
+        return;
+      }
+    }
+
+    if (!token) {
+      toast.error('Please login to use chat');
       return;
     }
 
@@ -104,10 +123,11 @@ export const ChatInterface = ({ documentId, projectId }: ChatInterfaceProps) => 
     };
     setMessages(prev => [...prev, assistantMsg]);
 
-    // Connect to SSE
+    // Connect to SSE with token in query params
     const encodedMessage = encodeURIComponent(message);
+    const encodedToken = encodeURIComponent(token);
     const eventSource = new EventSource(
-      `http://localhost:8000/api/chat/stream/${sessionId}?message=${encodedMessage}`
+      `http://localhost:8000/api/chat/stream/${sessionId}?message=${encodedMessage}&token=${encodedToken}`
     );
     eventSourceRef.current = eventSource;
 
@@ -122,7 +142,7 @@ export const ChatInterface = ({ documentId, projectId }: ChatInterfaceProps) => 
       switch (data.type) {
         case 'connected':
           break;
-          
+
         case 'search_start':
           searchStepId = 'search-' + Date.now();
           addStep({
@@ -133,15 +153,15 @@ export const ChatInterface = ({ documentId, projectId }: ChatInterfaceProps) => 
             details: [data.query || message]
           });
           break;
-          
+
         case 'search_complete':
           if (searchStepId) {
-            updateStep(searchStepId, { 
+            updateStep(searchStepId, {
               status: 'complete',
               label: `Found ${data.chunks_count} relevant sections`
             });
           }
-          
+
           readStepId = 'read-' + Date.now();
           addStep({
             id: readStepId,
@@ -151,12 +171,12 @@ export const ChatInterface = ({ documentId, projectId }: ChatInterfaceProps) => 
             details: data.sources || []
           });
           break;
-          
+
         case 'images_found':
           if (readStepId) {
             updateStep(readStepId, { status: 'complete' });
           }
-          
+
           if (data.count > 0) {
             imagesStepId = 'images-' + Date.now();
             addStep({
@@ -167,23 +187,23 @@ export const ChatInterface = ({ documentId, projectId }: ChatInterfaceProps) => 
             });
           }
           break;
-          
+
         case 'image':
           const newImage = { filename: data.filename, data: data.data };
           setCurrentImages(prev => [...prev, newImage]);
           // Also immediately add to the streaming message
-          setMessages(prev => prev.map(msg => 
+          setMessages(prev => prev.map(msg =>
             msg.id === streamingMessageIdRef.current
               ? { ...msg, images: [...(msg.images || []), newImage] }
               : msg
           ));
           break;
-          
+
         case 'response_start':
           if (readStepId) {
             updateStep(readStepId, { status: 'complete' });
           }
-          
+
           writeStepId = 'write-' + Date.now();
           addStep({
             id: writeStepId,
@@ -192,27 +212,27 @@ export const ChatInterface = ({ documentId, projectId }: ChatInterfaceProps) => 
             status: 'active'
           });
           break;
-          
+
         case 'content':
-          setMessages(prev => prev.map(msg => 
+          setMessages(prev => prev.map(msg =>
             msg.id === streamingMessageIdRef.current
               ? { ...msg, content: msg.content + data.content }
               : msg
           ));
           break;
-          
+
         case 'complete':
           if (writeStepId) {
             updateStep(writeStepId, { status: 'complete', label: 'Answer complete' });
           }
-          
-          setMessages(prev => prev.map(msg => 
+
+          setMessages(prev => prev.map(msg =>
             msg.id === streamingMessageIdRef.current
               ? { ...msg, images: [...(msg.images || []), ...currentImages] }
               : msg
           ));
           break;
-          
+
         case 'end':
           setIsStreaming(false);
           setTimeout(() => {
@@ -239,7 +259,7 @@ export const ChatInterface = ({ documentId, projectId }: ChatInterfaceProps) => 
 
   const handleClearHistory = async () => {
     if (!sessionId) return;
-    
+
     try {
       await apiService.clearChatHistory(sessionId);
       setMessages([]);
@@ -255,10 +275,10 @@ export const ChatInterface = ({ documentId, projectId }: ChatInterfaceProps) => 
       {/* Chat Header */}
       <div className="flex items-center justify-between pb-4 border-b border-border mb-4">
         <h3 className="text-lg font-semibold">Chat Assistant</h3>
-        <Button 
-          variant="outline" 
-          size="sm" 
-          onClick={handleClearHistory} 
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={handleClearHistory}
           disabled={!sessionId || messages.length === 0}
           className="gap-2"
         >
@@ -276,17 +296,17 @@ export const ChatInterface = ({ documentId, projectId }: ChatInterfaceProps) => 
               <p className="text-sm">Ask questions about your document</p>
             </div>
           )}
-          
+
           {messages.map((msg, index) => {
             const isLastAssistant = msg.type === 'assistant' && index === messages.length - 1;
             const showSteps = isLastAssistant && isStreaming && streamingSteps.length > 0;
-            
+
             return (
               <div key={msg.id}>
                 {showSteps && (
                   <StreamingSteps steps={streamingSteps} />
                 )}
-                
+
                 <ChatMessage
                   type={msg.type}
                   content={msg.content}
@@ -296,7 +316,7 @@ export const ChatInterface = ({ documentId, projectId }: ChatInterfaceProps) => 
               </div>
             );
           })}
-          
+
           <div ref={messagesEndRef} />
         </div>
       </ScrollArea>

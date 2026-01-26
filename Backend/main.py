@@ -2,9 +2,13 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from api.routes import router
 from config.settings import settings
+from config.logging_config import configure_logging
 from dotenv import load_dotenv
 import platform
 import os
+
+# Configure logging (suppress verbose retry logs)
+configure_logging()
 
 
 
@@ -37,6 +41,8 @@ app.add_middleware(
 # Include API Routes
 # -------------------------------
 app.include_router(router, prefix="/api", tags=["documents"])
+
+# Conversation routes are now included in api.routes
 
 # -------------------------------
 # Root Endpoint

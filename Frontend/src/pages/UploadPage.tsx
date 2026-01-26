@@ -66,38 +66,40 @@ const UploadPage = () => {
   };
 
   return (
-    <div className="container mx-auto px-6 py-8 max-w-4xl">
-      <div className="space-y-8 animate-fade-in">
-        <div className="text-center space-y-3 mb-12">
-          <h2 className="text-5xl font-bold text-foreground">Upload PDF Document</h2>
-          <p className="text-lg text-muted-foreground max-w-2xl mx-auto">
-            Process your PDFs with advanced MultiModal RAG technology
-          </p>
+    <div className="h-screen overflow-y-auto bg-background">
+      <div className="container mx-auto px-6 py-8 max-w-4xl">
+        <div className="space-y-8 animate-fade-in">
+          <div className="text-center space-y-3 mb-12">
+            <h2 className="text-5xl font-bold text-foreground">Upload PDF Document</h2>
+            <p className="text-lg text-muted-foreground max-w-2xl mx-auto">
+              Process your PDFs with advanced MultiModal RAG technology
+            </p>
+          </div>
+
+          <FileUpload
+            onFileSelect={setSelectedFile}
+            selectedFile={selectedFile}
+            onClearFile={() => setSelectedFile(null)}
+          />
+
+          <UploadSettings settings={settings} onSettingsChange={setSettings} />
+
+          <Button
+            onClick={handleUpload}
+            disabled={!selectedFile || isUploading}
+            className="w-full h-12 text-base"
+            size="lg"
+          >
+            {isUploading ? (
+              <>
+                <Loader2 className="w-5 h-5 mr-2 animate-spin" />
+                Starting Upload...
+              </>
+            ) : (
+              'Start Processing'
+            )}
+          </Button>
         </div>
-
-        <FileUpload
-          onFileSelect={setSelectedFile}
-          selectedFile={selectedFile}
-          onClearFile={() => setSelectedFile(null)}
-        />
-
-        <UploadSettings settings={settings} onSettingsChange={setSettings} />
-
-        <Button
-          onClick={handleUpload}
-          disabled={!selectedFile || isUploading}
-          className="w-full h-12 text-base"
-          size="lg"
-        >
-          {isUploading ? (
-            <>
-              <Loader2 className="w-5 h-5 mr-2 animate-spin" />
-              Starting Upload...
-            </>
-          ) : (
-            'Start Processing'
-          )}
-        </Button>
       </div>
     </div>
   );

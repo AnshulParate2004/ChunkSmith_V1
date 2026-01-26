@@ -74,7 +74,8 @@ class DocumentParser:
                 if lang in SUPPORTED_LANGUAGES.values():
                     codes.append(lang)
                 else:
-                    print(f"Warning: Unknown language '{lang}', skipping")
+                    # print(f"Warning: Unknown language '{lang}', skipping")
+                    pass
         
         # Default to English if no valid languages
         if not codes:

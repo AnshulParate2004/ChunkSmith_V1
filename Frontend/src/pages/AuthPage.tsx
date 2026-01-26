@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { supabase } from "@/integrations/supabase/client";
+import { useAuth } from "@/context/AuthContext";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -11,10 +11,11 @@ import { Loader2 } from "lucide-react";
 
 /**
  * Authentication Page
- * Handles Login and Signup using Supabase Auth
+ * Handles Login and Signup using Backend API
  */
 const AuthPage = () => {
     const navigate = useNavigate();
+    const { login, signup } = useAuth();
     const [loading, setLoading] = useState(false);
     const [email, setEmail] = useState("");
     const [password, setPassword] = useState("");
@@ -24,12 +25,7 @@ const AuthPage = () => {
         setLoading(true);
 
         try {
-            const { error } = await supabase.auth.signInWithPassword({
-                email,
-                password,
-            });
-
-            if (error) throw error;
+            await login(email, password);
 
             toast.success("Successfully logged in!");
             navigate("/dashboard");
@@ -45,12 +41,7 @@ const AuthPage = () => {
         setLoading(true);
 
         try {
-            const { error } = await supabase.auth.signUp({
-                email,
-                password,
-            });
-
-            if (error) throw error;
+            await signup(email, password);
 
             toast.success("Check your email for the confirmation link!");
         } catch (error: any) {

@@ -1,0 +1,606 @@
+"""Document processing and viewing API routes"""
+import os
+import json
+import asyncio
+import tempfile
+from datetime import datetime
+from typing import AsyncGenerator, Dict
+from pathlib import Path
+from fastapi import APIRouter, UploadFile, File, HTTPException, BackgroundTasks, Query
+from fastapi.responses import FileResponse, StreamingResponse
+from config.settings import settings
+from core.document_parser import DocumentParser
+from core.content_processor import ContentProcessor
+from utils.file_helpers import FileHandler
+from utils.storage import StorageManager
+from api.shared import processing_status, send_sse_message
+
+router = APIRouter(tags=["Document Processing"])
+
+
+# ============================================
+# PDF PROCESSING ENDPOINTS
+# ============================================
+
+@router.post("/process-pdf")
+async def initiate_pdf_processing(
+    project_id: str = Query(..., description="Project ID where this PDF belongs"),
+    file: UploadFile = File(...),
+    background_tasks: BackgroundTasks = None,
+    max_characters: int = settings.MAX_CHARACTERS,
+    new_after_n_chars: int = settings.NEW_AFTER_N_CHARS,
+    combine_text_under_n_chars: int = settings.COMBINE_TEXT_UNDER_N_CHARS,
+    extract_images: bool = settings.EXTRACT_IMAGES,
+    extract_tables: bool = settings.EXTRACT_TABLES,
+    languages: str = "english",
+):
+    """
+    Process PDF and add to project (Supabase-only storage)
+    """
+    try:
+        # Generate unique document ID
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        document_id = f"{file.filename.replace('.pdf', '')}_{timestamp}"
+        
+        # Save uploaded file to a temporary file (auto-cleanup handled later)
+        # We use delete=False so we can pass the path to the background task
+        # The background task will delete it upon completion
+        temp_file = tempfile.NamedTemporaryFile(delete=False, suffix=".pdf")
+        upload_path = temp_file.name
+        
+        content = await file.read()
+        temp_file.write(content)
+        temp_file.close() # Close handle so others can read
+            
+        # Validate PDF
+        is_valid, error_msg = FileHandler.validate_pdf(
+            upload_path, 
+            settings.MAX_FILE_SIZE // (1024 * 1024)
+        )
+        if not is_valid:
+            os.remove(upload_path)
+            raise HTTPException(status_code=400, detail=error_msg)
+        
+        # Upload PDF to Supabase PDF Bucket
+        try:
+            storage_mgr = StorageManager()
+            with open(upload_path, 'rb') as pdf_file:
+                pdf_content = pdf_file.read()
+                
+            storage_mgr.upload_data(
+                pdf_content, 
+                f"{project_id}/{document_id}.pdf", 
+                "application/pdf",
+                bucket_name=settings.SUPABASE_PDF_BUCKET_NAME
+            )
+            print(f"Uploaded PDF to Supabase: {document_id}.pdf")
+        except Exception as e:
+            print(f"Error uploading PDF to Supabase: {e}")
+            # Non-critical for processing, but good to know
+        
+        # Initialize status
+        processing_status[document_id] = {
+            "status": "queued",
+            "progress": 0,
+            "message": "Processing queued",
+            "project_id": project_id
+        }
+        
+        # Start background processing
+        background_tasks.add_task(
+            process_pdf_background,
+            project_id=project_id,
+            document_id=document_id,
+            upload_path=upload_path,
+            max_characters=max_characters,
+            new_after_n_chars=new_after_n_chars,
+            combine_text_under_n_chars=combine_text_under_n_chars,
+            extract_images=extract_images,
+            extract_tables=extract_tables,
+            languages=languages
+        )
+        
+        return {
+            "success": True,
+            "message": "Processing initiated",
+            "project_id": project_id,
+            "document_id": document_id,
+            "stream_url": f"/api/process-pdf-stream/{document_id}"
+        }
+    
+    except HTTPException:
+        raise
+    except Exception as e:
+        if 'upload_path' in locals() and os.path.exists(upload_path):
+            os.remove(upload_path)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/process-pdf-stream/{document_id}")
+async def stream_pdf_processing(document_id: str): 
+    """Stream processing updates via Server-Sent Events (SSE)"""
+    
+    async def event_generator() -> AsyncGenerator[str, None]:
+        try:
+            # Wait for processing to start
+            max_wait = 30
+            waited = 0
+            while document_id not in processing_status and waited < max_wait:
+                await asyncio.sleep(0.5)
+                waited += 0.5
+            
+            if document_id not in processing_status:
+                yield await send_sse_message("error", {
+                    "message": "Processing not found or timed out"
+                })
+                return
+            
+            # Send initial connection message
+            yield await send_sse_message("connected", {
+                "message": "Connected to processing stream",
+                "document_id": document_id
+            })
+            
+            last_status = None
+            
+            # Stream updates
+            while True:
+                if document_id in processing_status:
+                    current_status = processing_status[document_id]
+                    
+                    # Only send if status changed
+                    if current_status != last_status:
+                        yield await send_sse_message("progress", current_status)
+                        last_status = current_status.copy()
+                    
+                    # Check if completed or failed
+                    if current_status.get("status") in ["completed", "failed"]:
+                        # Send final message
+                        if current_status.get("status") == "completed":
+                            yield await send_sse_message("complete", current_status)
+                        else:
+                            yield await send_sse_message("error", current_status)
+                        
+                        # Cleanup after 5 seconds
+                        await asyncio.sleep(5)
+                        if document_id in processing_status:
+                            del processing_status[document_id]
+                        break
+                
+                await asyncio.sleep(1)
+        
+        except asyncio.CancelledError:
+            pass
+        except Exception as e:
+            yield await send_sse_message("error", {
+                "message": f"Stream error: {str(e)}"
+            })
+    
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no"
+        }
+    )
+
+
+# ============================================
+# DOCUMENT VIEWING ENDPOINTS
+# ============================================
+
+@router.get("/projects/{project_id}/documents/{document_id}/chunks")
+async def view_processed_chunks(
+    project_id: str,
+    document_id: str,
+    include_images: bool = True
+):
+    """View processed chunks for a specific document"""
+    try:
+        # Download from Supabase (Primary Source) - No local file check
+        storage_mgr = StorageManager()
+        supabase_path = f"{project_id}/json/{document_id}_processed.json"
+        
+        try:
+             json_bytes = storage_mgr.download_file(
+                 supabase_path, 
+                 bucket_name=settings.SUPABASE_DATA_BUCKET_NAME
+             )
+             chunks_data = json.loads(json_bytes.decode('utf-8'))
+             json_file_path = f"supabase://{settings.SUPABASE_DATA_BUCKET_NAME}/{supabase_path}"
+        
+        except Exception as e:
+             # Try fallback path without project_id prefix just in case
+             try:
+                fallback_path = f"json/{document_id}_processed.json"
+                json_bytes = storage_mgr.download_file(
+                    fallback_path, 
+                    bucket_name=settings.SUPABASE_DATA_BUCKET_NAME
+                )
+                chunks_data = json.loads(json_bytes.decode('utf-8'))
+                json_file_path = f"supabase://{settings.SUPABASE_DATA_BUCKET_NAME}/{fallback_path}"
+             except:
+                raise HTTPException(
+                    status_code=404, 
+                    detail=f"Processed chunks not found for document '{document_id}' in Supabase. Ensure processing is complete."
+                )
+        
+        # Process images if requested
+        if isinstance(chunks_data, list):
+            # image_dir = settings.get_project_image_dir(project_id) # Not used for remote files but kept for path logic reference if needed
+            
+            for chunk in chunks_data:
+                # 1. Resolve Text Content
+                # New standard: enhanced_content. Legacy: page_content, text.
+                primary_text = chunk.get('enhanced_content') or chunk.get('page_content') or chunk.get('text') or ""
+                
+                # Fallback to metadata if nested (legacy structure)
+                if not primary_text and 'metadata' in chunk:
+                    primary_text = chunk['metadata'].get('original_text', "")
+
+                # Set ALL fields to ensure frontend finds it
+                chunk['text'] = primary_text
+                chunk['content'] = primary_text
+                chunk['page_content'] = primary_text
+                chunk['original_text'] = primary_text # Might overwrite if top-level exists, but primary_text is truth
+                
+                # 2. Flatten Metadata (if nested) for other fields
+                if 'metadata' in chunk and isinstance(chunk['metadata'], dict):
+                    for k, v in chunk['metadata'].items():
+                        if k not in chunk:
+                            chunk[k] = v
+
+                # 3. Process Images
+                if include_images:
+                    chunk['images_base64'] = []
+                    
+                    # Try to find base64 data (Top level first, then metadata)
+                    embedded_b64 = chunk.get('image_base64')
+                    
+                    # Handle potential stringified JSON (Qdrant legacy) or list
+                    if isinstance(embedded_b64, str):
+                        try: embedded_b64 = json.loads(embedded_b64)
+                        except: embedded_b64 = []
+                        
+                    if isinstance(embedded_b64, list) and embedded_b64:
+                        # Get paths for reference
+                        paths = chunk.get('image_paths', [])
+                        if isinstance(paths, str):
+                            try: paths = json.loads(paths)
+                            except: paths = []
+                            
+                        for idx, b64_data in enumerate(embedded_b64):
+                            path_val = paths[idx] if isinstance(paths, list) and idx < len(paths) else None
+                            filename = Path(path_val).name if path_val else f"image_{idx}.png"
+                            
+                            chunk['images_base64'].append({
+                                'filename': filename,
+                                'data': f"data:image/png;base64,{b64_data}",
+                                'path': path_val
+                            })
+                    
+                    # Fallback: remote/local paths if no base64
+                    elif chunk.get('image_paths'):
+                        paths = chunk.get('image_paths')
+                        if isinstance(paths, str):
+                             try: paths = json.loads(paths)
+                             except: paths = [paths]
+                             
+                        if isinstance(paths, list):
+                            for image_path in paths:
+                                if image_path.startswith("http"):
+                                     chunk['images_base64'].append({
+                                        'filename': Path(image_path).name,
+                                        'data': image_path,
+                                        'path': image_path
+                                    })
+                                else:
+                                     chunk['images_base64'].append({
+                                        'filename': Path(image_path).name,
+                                        'data': image_path, # Assume path IS the url/ref
+                                        'path': image_path
+                                    })
+                        
+                        # Legacy handling for string paths
+                        elif isinstance(chunk.get('image_paths'), str):
+                             # Should have been handled above, but just in case
+                             pass
+
+        file_size_kb = len(json_bytes) / 1024
+        
+        return {
+            "success": True,
+            "project_id": project_id,
+            "document_id": document_id,
+            "file_path": json_file_path,
+            "file_size_kb": round(file_size_kb, 2),
+            "chunks_count": len(chunks_data) if isinstance(chunks_data, list) else 1,
+            "images_included": include_images,
+            "chunks": chunks_data
+        }
+    
+    except HTTPException:
+        raise
+    except json.JSONDecodeError as e:
+        raise HTTPException(status_code=500, detail=f"Failed to parse JSON: {str(e)}")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error reading chunks: {str(e)}")
+
+
+@router.get("/projects/{project_id}/images/{image_filename}")
+async def get_project_image(project_id: str, image_filename: str):
+    """Get a specific image from a project"""
+    try:
+        from pathlib import Path
+        
+        image_dir = settings.get_project_image_dir(project_id)
+        image_path = os.path.join(image_dir, image_filename)
+        
+        if not os.path.exists(image_path):
+            raise HTTPException(
+                status_code=404,
+                detail=f"Image '{image_filename}' not found in project '{project_id}'"
+            )
+        
+        allowed_extensions = ['.png', '.jpg', '.jpeg', '.gif', '.bmp']
+        if Path(image_path).suffix.lower() not in allowed_extensions:
+            raise HTTPException(status_code=400, detail="Invalid file type")
+        
+        return FileResponse(
+            path=image_path,
+            media_type="image/png" if image_path.endswith('.png') else "image/jpeg",
+            filename=image_filename
+        )
+    
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error retrieving image: {str(e)}")
+
+
+# ============================================
+# BACKGROUND TASK
+# ============================================
+
+async def process_pdf_background(
+    project_id: str,
+    document_id: str,
+    upload_path: str,
+    max_characters: int,
+    new_after_n_chars: int,
+    combine_text_under_n_chars: int,
+    extract_images: bool,
+    extract_tables: bool,
+    languages: str
+):
+    """Background task for PDF processing with project-based storage"""
+    
+    try:
+        # Create a temporary workspace for this task to ensure no local artifacts remain
+        temp_dir = tempfile.mkdtemp()
+        image_dir = Path(temp_dir) / "images"
+        pickle_dir = Path(temp_dir) / "pickle"
+        json_dir = Path(temp_dir) / "json"
+        
+        image_dir.mkdir(parents=True, exist_ok=True)
+        pickle_dir.mkdir(parents=True, exist_ok=True)
+        json_dir.mkdir(parents=True, exist_ok=True)
+        
+        # Update status: Starting
+        processing_status[document_id] = {
+            "status": "processing",
+            "step": 1,
+            "step_name": "upload",
+            "progress": 5,
+            "message": "File uploaded and validated",
+            "project_id": project_id
+        }
+        await asyncio.sleep(0.5)
+        
+        # Step 2: Parse PDF
+        processing_status[document_id] = {
+            "status": "processing",
+            "step": 2,
+            "step_name": "parsing",
+            "progress": 10,
+            "message": "Step 2: Parsing PDF document...",
+            "project_id": project_id
+        }
+        
+        language_list = [lang.strip() for lang in languages.split(',')]
+        parser = DocumentParser(
+            image_output_dir=str(image_dir),
+            api_key=os.getenv("UNSTRUCTURED_API_KEY")
+        )
+        
+        loop = asyncio.get_event_loop()
+        # Note: Unstructured API doesn't use chunking params in partition call
+        # Chunking happens after with chunk_by_title
+        elements = await loop.run_in_executor(
+            None,
+            parser.partition_pdf_document,
+            upload_path,
+            max_characters,
+            new_after_n_chars,
+            combine_text_under_n_chars,
+            extract_images,
+            extract_tables,
+            language_list,
+            settings.SPLIT_PDF_CONCURRENCY_LEVEL
+        )
+        
+        checkpoint1_path = os.path.join(pickle_dir, f"{document_id}_checkpoint1.pkl")
+        FileHandler.save_pickle(elements, checkpoint1_path)
+        
+        processing_status[document_id] = {
+            "status": "processing",
+            "step": 2,
+            "step_name": "parsing",
+            "progress": 25,
+            "message": f"Step 2: Parsing complete ({len(elements)} elements)",
+            "project_id": project_id
+        }
+    
+        # Step 3: Chunking
+        processing_status[document_id].update({
+            "step": 3,
+            "step_name": "chunking",
+            "progress": 30,
+            "message": "Step 3: Chunking elements by title..."
+        })
+        
+        from unstructured.chunking.title import chunk_by_title
+        chunks = chunk_by_title(
+            elements=elements,
+            max_characters=max_characters,
+            new_after_n_chars=new_after_n_chars,
+            combine_text_under_n_chars=combine_text_under_n_chars
+        )
+        
+        checkpoint2_path = os.path.join(pickle_dir, f"{document_id}_checkpoint2.pkl")
+        FileHandler.save_pickle(chunks, checkpoint2_path)
+        
+        processing_status[document_id].update({
+            "progress": 40,
+            "message": f"Step 3: Chunking complete ({len(chunks)} chunks)"
+        })
+        
+        # Step 4: AI Summarization
+        # Use existing image dir but keep in mind paths will be relative to temp_dir
+        # We need to ensure ContentProcessor handles paths correctly for Supabase upload
+        processor = ContentProcessor(
+            image_dir=str(image_dir), 
+            model_name=settings.AI_MODEL, 
+            temperature=settings.AI_TEMPERATURE,
+            project_id=project_id
+        )
+        
+        # We will stream progress updates during summarization if possible
+        # For now, we update status before starting
+        processing_status[document_id].update({
+            "step": 4,
+            "step_name": "summarizing",
+            "progress": 50,
+            "message": "Step 4: Generative AI Summarization (Multi-threaded & Multi-Key)..."
+        })
+        
+        langchain_documents = processor.summarise_chunks(chunks)
+        
+        # Save processed chunks locally first (JSON)
+        processed_data = []
+        for doc in langchain_documents:
+            doc_dict = {
+                "page_content": doc.page_content,
+                "metadata": doc.metadata
+            }
+            # Add enhanced fields to top level for frontend convenience
+            doc_dict["enhanced_content"] = doc.page_content 
+            doc_dict["original_text"] = doc.metadata.get("original_text", "")
+            
+            # Flatten some metadata
+            for key in ["ai_summary", "ai_questions", "image_interpretation", "table_interpretation"]:
+                if key in doc.metadata:
+                    doc_dict[key] = doc.metadata[key]
+            
+            processed_data.append(doc_dict)
+            
+        json_path = os.path.join(json_dir, f"{document_id}_processed.json")
+        FileHandler.save_json(processed_data, json_path)
+        
+        processing_status[document_id].update({
+            "progress": 80,
+            "message": "Step 4: Summarization complete"
+        })
+        
+        # Step 5: Vector Loading
+        processing_status[document_id].update({
+            "step": 5,
+            "step_name": "embedding",
+            "progress": 85,
+            "message": f"Step 5: Loading {len(langchain_documents)} chunks into Vector Store ({project_id})..."
+        })
+        
+        vector_manager = VectorStoreManager(embedding_model=settings.EMBEDDING_MODEL)
+        
+        # Add to project-specific collection
+        vector_manager.create_vector_store(
+            documents=langchain_documents,
+            collection_name=project_id 
+        )
+        
+        processing_status[document_id].update({
+            "progress": 95,
+            "message": "Step 5: Vector loading complete"
+        })
+        
+        # Step 6: Upload artifacts to Supabase
+        storage_mgr = StorageManager()
+        
+        # Upload JSON
+        with open(json_path, 'rb') as f:
+            storage_mgr.upload_data(
+                f.read(),
+                f"{project_id}/json/{document_id}_processed.json",
+                "application/json",
+                bucket_name=settings.SUPABASE_DATA_BUCKET_NAME
+            )
+        
+        # Upload Pickles (Checkpoints)
+        with open(checkpoint1_path, 'rb') as f:
+             storage_mgr.upload_data(
+                f.read(),
+                f"{project_id}/pickle/{document_id}_checkpoint1.pkl",
+                "application/octet-stream",
+                bucket_name=settings.SUPABASE_PKL_BUCKET_NAME
+            )
+        
+        with open(checkpoint2_path, 'rb') as f:
+             storage_mgr.upload_data(
+                f.read(),
+                f"{project_id}/pickle/{document_id}_checkpoint2.pkl",
+                "application/octet-stream",
+                bucket_name=settings.SUPABASE_PKL_BUCKET_NAME
+            )
+
+        # Cleanup local processed file (temp uploaded)
+        if os.path.exists(upload_path):
+             os.remove(upload_path)
+             
+        # Cleanup temporary workspace
+        shutil.rmtree(temp_dir)
+        
+        # Complete
+        processing_status[document_id] = {
+            "status": "completed",
+            "progress": 100,
+            "message": "Processing successfully completed!",
+            "project_id": project_id,
+            "document_id": document_id,
+            "stats": {
+                "chunks": len(chunks),
+                "images": processor.image_counter if hasattr(processor, 'image_counter') else 0
+            }
+        }
+        
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        
+        # Try to cleanup
+        try:
+            if 'upload_path' in locals() and os.path.exists(upload_path):
+                os.remove(upload_path)
+            if 'temp_dir' in locals() and os.path.exists(temp_dir):
+                shutil.rmtree(temp_dir)
+        except:
+            pass
+            
+        processing_status[document_id] = {
+            "status": "failed",
+            "progress": 0,
+            "message": f"Processing failed: {str(e)}",
+            "error_details": str(e),
+            "project_id": project_id
+        }

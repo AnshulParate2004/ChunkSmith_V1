@@ -4,7 +4,7 @@ import logging
 from typing import List, Optional
 from langchain_core.documents import Document
 from langchain_google_genai import GoogleGenerativeAIEmbeddings
-from langchain_community.vectorstores import Qdrant
+from langchain_qdrant import QdrantVectorStore
 from qdrant_client import QdrantClient
 from qdrant_client.http import models as rest
 from config.settings import settings
@@ -75,10 +75,10 @@ class VectorStoreManager:
              )
         
         # Add documents via LangChain Qdrant wrapper
-        vectorstore = Qdrant(
+        vectorstore = QdrantVectorStore(
             client=self.client,
             collection_name=collection_name,
-            embeddings=self.embedding_model
+            embedding=self.embedding_model
         )
         vectorstore.add_documents(documents)
         
@@ -107,10 +107,10 @@ class VectorStoreManager:
         """
         # logger.info(f"Loading Qdrant vector store for collection: {collection_name}")
         
-        vectorstore = Qdrant(
+        vectorstore = QdrantVectorStore(
             client=self.client,
             collection_name=collection_name,
-            embeddings=self.embedding_model
+            embedding=self.embedding_model
         )
         
         vectorstore.project_id = collection_name
