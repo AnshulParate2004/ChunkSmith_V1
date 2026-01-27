@@ -17,7 +17,7 @@ load_dotenv()
 class AIParser(BaseModel):
     """AI Parser Model for text, image and table information"""
     question: str = Field(description="List all potential questions that can be answered from this content (text, images, tables). Try to keep words similar to original content")
-    summary: str = Field(description="Comprehensive summary of all data and information. Try to keep words similar to original content")
+    summary: str = Field(description="Comprehensive summary of all data and information. it shoulde be short")
     image_interpretation: List[str] = Field(description="List matching the order of input images; image_interpretation[i] describes image i, use ***DO NOT USE THIS IMAGE*** for irrelevant images, and return an empty list if no images are provided.")
     table_interpretation: List[str] = Field(description="List matching the order of input tables; table_interpretation[i] describes table i, use ***DO NOT USE THIS TABLE*** for irrelevant tables, and return an empty list if no tables are provided.")
 
@@ -207,7 +207,7 @@ YOUR TASK:
 Generate a comprehensive, searchable description that covers:
 
 1. Key facts, numbers, and data points from text and tables
-2. Main topics and concepts discussed  
+2. Main topics and concepts discussed short discription.
 3. Questions this content could answer
 4. Visual content analysis (charts, diagrams, patterns in images)
 5. Alternative search terms users might use
@@ -217,7 +217,7 @@ Keep words similar to the original content for better search accuracy.
 
 IMPORTANT: Return structured output with these fields:
 - question: All potential questions this content answers
-- summary: Comprehensive summary of all information
+- summary: Comprehensive summary of all information short summary 
 - image_interpretation: List matching the order of input images; image_interpretation[i] describes image i, use ***DO NOT USE THIS IMAGE*** for irrelevant images, and return an empty list if no images are provided.
 - table_interpretation: List matching the order of input tables; table_interpretation[i] describes table i, use ***DO NOT USE THIS TABLE*** for irrelevant tables, and return an empty list if no tables are provided.
 
