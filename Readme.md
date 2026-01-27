@@ -34,18 +34,33 @@ Unlike traditional RAG systems that often discard visual information, ChunkSmith
 
 ---
 
-## Features
+## How It Works
 
-- **Image Retrieval**: Returns actual images from PDFs in responses.
-- **Multi-language OCR**: Support for 90+ languages.
-- **Async Processing**: Multi-API key load balancing for high throughput.
-- **Smart Chat**: Context-aware Q&A with visual and textual support.
-- **Data Export**: Download chunks, images, and embeddings.
-- **Streaming Responses**: Real-time Server-Sent Events (SSE) for chat.
-- **Data Persistence**: Vector storage and metadata management.
+### 1. Upload PDF
+User uploads any PDF file to the system.
+
+### 2. OCR + Chunking
+The PDF is broken into smaller chunks using **Tesseract OCR** & **Poppler**.
+
+### 3. Chunk Format
+Each chunk contains **Text**, **Snapshot**, **Summary**, and **Metadata**.
+
+### 4. AI Summarization
+Each chunk image is passed to the AI to generate a high-quality summary.
+
+### 5. Vector Embedding
+Summaries + text are converted into vector embeddings for semantic search.
+
+### 6. Ask Questions
+Users can ask any question about the PDF. The AI retrieves relevant chunks.
+
+### 7. Return Answer + Image
+The AI answers and returns the exact image snippet for proof.
 
 ---
 
 ## License
 
-MIT License.
+This project is licensed under the **MIT License**.
+
+Copyright (c) 2024 Anshul Parate
