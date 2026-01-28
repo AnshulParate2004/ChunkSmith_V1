@@ -299,10 +299,6 @@ const ProjectPage = () => {
                     <span className="text-sm text-muted-foreground">{conversations.length}</span>
                   </div>
                   <div className="flex gap-2">
-                    <Button variant="outline" className="gap-2" onClick={() => apiService.downloadProjectData(projectId!)}>
-                      <Download className="w-4 h-4" />
-                      Download Project
-                    </Button>
                     <Button className="gap-2" onClick={handleNewConversation}>
                       <Plus className="w-4 h-4" />
                       New conversation

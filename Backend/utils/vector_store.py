@@ -64,14 +64,14 @@ class VectorStoreManager:
                 doc.metadata["content_types"] = json.dumps(doc.metadata["content_types"])
         
         # Ensure collection exists
-        # text-embedding-004 has 768 dimensions
+        # gemini-embedding-001 has 3072 dimensions
         try:
             self.client.get_collection(collection_name)
         except Exception:
              # logger.info(f"Creating new Qdrant collection: {collection_name}")
              self.client.create_collection(
                  collection_name=collection_name,
-                 vectors_config=rest.VectorParams(size=768, distance=rest.Distance.COSINE)
+                 vectors_config=rest.VectorParams(size=3072, distance=rest.Distance.COSINE)
              )
         
         # Add documents via LangChain Qdrant wrapper

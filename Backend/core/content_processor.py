@@ -250,15 +250,16 @@ TEXT CONTENT:
             llm_structured = self._get_llm_for_key(api_key)
             
             # Make async API call
-            # print(f"Chunk {chunk_index}: Sending to API (key #{self.api_keys.index(api_key) + 1})")
+            key_id = self.api_keys.index(api_key) + 1
+            print(f"  > [AI] Chunk {chunk_index}: Sending to API (Key #{key_id})...")
             response = await llm_structured.ainvoke([message])
-            # print(f"Chunk {chunk_index}: Response received")
+            print(f"  > [AI] Chunk {chunk_index}: Success.")
             
             return response
                 
         except Exception as e:
             # On failure, return None to use raw chunk (no error messages)
-            # print(f"Chunk {chunk_index}: AI summary failed, using raw chunk data")
+            print(f"  > [AI] Chunk {chunk_index}: FAILED ({str(e)}), using raw chunk data")
             return None
     
     async def process_chunks_async(self, chunks_data: List[Dict]) -> List[Optional[AIParser]]:
@@ -289,9 +290,9 @@ TEXT CONTENT:
             tasks.append(task)
         
         # Run all tasks concurrently
-        # print(f"\nProcessing {len(tasks)} chunks asynchronously with {min(len(tasks), len(self.api_keys))} API keys...")
+        print(f"  ... Dispatching {len(tasks)} async AI tasks ...")
         responses = await asyncio.gather(*tasks)
-        # print(f"All {len(responses)} chunks processed!\n")
+        print(f"  ... All {len(responses)} AI tasks completed.")
         
         return responses
     
@@ -305,7 +306,7 @@ TEXT CONTENT:
         Returns:
             List of LangChain Documents with enhanced summaries
         """
-        # print("Processing chunks with AI Summaries (Multi-API Async Mode)...")
+        print(f"\n=== [AI PROCESSING START] Processing {len(chunks)} chunks with {len(self.api_keys)} API keys ===")
         
         # No longer cleaning - project-based structure keeps data isolated
         
@@ -442,7 +443,7 @@ ORIGINAL TEXT: {content_data['text']}"""
             
             langchain_documents.append(doc)
         
-        # print(f"\nSuccessfully processed {len(langchain_documents)} chunks")
+        print(f"=== [AI PROCESSING END] Processed {len(langchain_documents)} chunks ===\n")
         # print(f"Used async processing with {len(self.api_keys)} API key(s)")
         
         return langchain_documents

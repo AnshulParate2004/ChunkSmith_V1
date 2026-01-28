@@ -9,7 +9,7 @@ from datetime import datetime
 from typing import AsyncGenerator, Dict
 from pathlib import Path
 from fastapi import APIRouter, UploadFile, File, HTTPException, BackgroundTasks, Query, Depends
-from fastapi.responses import FileResponse, StreamingResponse
+from fastapi.responses import FileResponse, StreamingResponse, JSONResponse
 from config.settings import settings
 from core.document_parser import DocumentParser
 from core.content_processor import ContentProcessor
@@ -299,6 +299,21 @@ async def view_processed_chunks(
     user = Depends(get_current_user)
 ):
     """View processed chunks for a specific document"""
+    # Check current processing status first
+    if document_id in processing_status:
+        status_info = processing_status[document_id]
+        if status_info.get("status") not in ["completed", "failed"]:
+             return JSONResponse(
+                status_code=202,
+                content={
+                    "success": False,
+                    "status": "processing", 
+                    "message": "Document processing in progress",
+                    "progress": status_info.get("progress", 0),
+                    "current_step": status_info.get("message", "Processing...")
+                }
+            )
+
     try:
         # Download from Supabase (Primary Source) - No local file check
         storage_mgr = StorageManager()
@@ -553,12 +568,24 @@ async def process_pdf_background(
         })
         
         from unstructured.chunking.title import chunk_by_title
+        
+        print(f"\n=== [CHUNKING START] Document: {document_id} ===")
+        print(f"Input: {len(elements)} elements to be chunked.")
+        
         chunks = chunk_by_title(
             elements=elements,
             max_characters=max_characters,
             new_after_n_chars=new_after_n_chars,
             combine_text_under_n_chars=combine_text_under_n_chars
         )
+        
+        print(f"Output: Generated {len(chunks)} chunks.")
+        for i, chunk in enumerate(chunks):
+             # Try to get text content safely
+             text_content = getattr(chunk, "text", str(chunk))
+             preview = text_content[:60].replace('\n', ' ')
+             print(f"  > Chunk {i+1}: Length={len(text_content)} | Content: {preview}...")
+        print(f"=== [CHUNKING END] ===\n")
         
         checkpoint2_path = os.path.join(pickle_dir, f"{document_id}_checkpoint2.pkl")
         FileHandler.save_pickle(chunks, checkpoint2_path)
