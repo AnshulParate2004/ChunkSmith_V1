@@ -127,7 +127,7 @@ export const ChatInterface = ({ documentId, projectId }: ChatInterfaceProps) => 
     const encodedMessage = encodeURIComponent(message);
     const encodedToken = encodeURIComponent(token);
     const eventSource = new EventSource(
-      `https://chunksmith.onrender.com/api/chat/stream/${sessionId}?message=${encodedMessage}&token=${encodedToken}`
+      `http://localhost:8000/api/chat/stream/${sessionId}?message=${encodedMessage}&token=${encodedToken}`
     );
     eventSourceRef.current = eventSource;
 
@@ -228,7 +228,7 @@ export const ChatInterface = ({ documentId, projectId }: ChatInterfaceProps) => 
 
           setMessages(prev => prev.map(msg =>
             msg.id === streamingMessageIdRef.current
-              ? { ...msg, images: [...(msg.images || []), ...currentImages] }
+              ? { ...msg } // status is implicitly handled by completion
               : msg
           ));
           break;

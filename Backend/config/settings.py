@@ -18,7 +18,7 @@ class Settings(BaseSettings):
     SPLIT_PDF_CONCURRENCY_LEVEL: int = 15  # Concurrency level for PDF splitting
     
     # AI Model settings
-    GEMINI_MODEL: str = "gemini-2.5-pro"
+    GEMINI_MODEL: str = "gemini-2.5-flash"
     EMBEDDING_MODEL: str = "models/gemini-embedding-001"
     TEMPERATURE: float = 0.0
     

@@ -51,13 +51,27 @@ class ChatAgent:
         else:
              self.supabase = None
         
+        # Load API keys and select one
+        import random
+        self.api_keys = self._load_api_keys()
+        if not self.api_keys:
+            print("WARNING: No GOOGLE_API_KEY found in environment for ChatAgent")
+            self.api_key = os.getenv("GOOGLE_API_KEY") # Fallback
+        else:
+            self.api_key = random.choice(self.api_keys)
+            
+        print(f"ChatAgent initialized with API Key ending in ...{self.api_key[-4:] if self.api_key else 'None'}")
+
+        # Initialize shown images tracking
+        self.shown_images = set()
+
         # Initialize base LLM for structured output
         self.structured_llm = ChatGoogleGenerativeAI(
             model=settings.GEMINI_MODEL,
             temperature=0.2,
-            google_api_key=os.getenv("GOOGLE_API_KEY")
+            google_api_key=self.api_key
         ).with_structured_output(ChatResponse)
-        
+
         # Set paths
         self.image_dir = str(settings.get_project_image_dir(project_id))
         
@@ -94,6 +108,22 @@ CONVERSATION HISTORY:
 {chat_history}
 
 Answer the user's question based on the context and conversation history."""
+
+    def _load_api_keys(self) -> List[str]:
+        """Load all available Google API keys from environment"""
+        api_keys = []
+        # Try to load numbered API keys (1-12 based on .env)
+        for i in range(1, 15):
+            key = os.getenv(f"GOOGLE_API_KEY_{i}")
+            if key and key.strip():
+                api_keys.append(key.strip())
+        
+        # Also check default key
+        default_key = os.getenv("GOOGLE_API_KEY")
+        if default_key and default_key.strip() and default_key.strip() not in api_keys:
+            api_keys.append(default_key.strip())
+            
+        return api_keys
 
     def _get_history(self) -> List[HumanMessage | AIMessage]:
         """Fetch conversation history from Supabase"""
@@ -331,7 +361,16 @@ Answer the user's question based on the context and conversation history."""
                 for img_idx in unique_indices:
                     if img_idx in image_index:
                         img_data = image_index[img_idx]
-                        ext = Path(img_data['path']).suffix.lower()
+                        img_path = img_data['path']
+                        
+                        # DEDUPLICATION: Check if image was already shown in this session
+                        if img_path in self.shown_images:
+                            continue
+                            
+                        # Mark as shown
+                        self.shown_images.add(img_path)
+                        
+                        ext = Path(img_path).suffix.lower()
                         mime_type = 'image/png' if ext == '.png' else 'image/jpeg'
                         data_uri = f"data:{mime_type};base64,{img_data['base64']}"
                         
@@ -340,7 +379,7 @@ Answer the user's question based on the context and conversation history."""
                             "data": {
                                 "filename": img_data['filename'],
                                 "data": data_uri,
-                                "path": img_data['path'],
+                                "path": img_path,
                                 "index": img_idx,
                                 "description": img_data['description']
                             }
@@ -363,6 +402,7 @@ Answer the user's question based on the context and conversation history."""
             }
             
         except Exception as e:
+            print(f"Error in chat stream: {e}")
             yield {
                 "type": "error",
                 "data": {

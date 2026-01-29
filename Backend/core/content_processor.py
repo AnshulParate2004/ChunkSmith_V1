@@ -202,6 +202,10 @@ class ContentProcessor:
         
         try:
             # Build prompt
+            # Counts for strict instruction
+            num_tables = len(tables) if tables else 0
+            num_images = len(images) if images else 0
+
             prompt_text = f"""You are creating a searchable description for document content retrieval.
 YOUR TASK:
 Generate a comprehensive, searchable description that covers:
@@ -214,6 +218,12 @@ Generate a comprehensive, searchable description that covers:
 
 Make it detailed and searchable - prioritize findability over brevity.
 Keep words similar to the original content for better search accuracy.
+
+STRICT OUTPUT CONSTRAINTS:
+- You received {num_images} images. You MUST return exactly {num_images} items in 'image_interpretation'.
+- You received {num_tables} tables. You MUST return exactly {num_tables} items in 'table_interpretation'.
+- If {num_images} is 0, 'image_interpretation' MUST be an empty list [].
+- If {num_tables} is 0, 'table_interpretation' MUST be an empty list [].
 
 IMPORTANT: Return structured output with these fields:
 - question: All potential questions this content answers
