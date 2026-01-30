@@ -127,7 +127,7 @@ export const ChatInterface = ({ documentId, projectId }: ChatInterfaceProps) => 
     const encodedMessage = encodeURIComponent(message);
     const encodedToken = encodeURIComponent(token);
     const eventSource = new EventSource(
-      `http://localhost:8000/api/chat/stream/${sessionId}?message=${encodedMessage}&token=${encodedToken}`
+      `https://chunksmith.onrender.com/api/chat/stream/${sessionId}?message=${encodedMessage}&token=${encodedToken}`
     );
     eventSourceRef.current = eventSource;
 

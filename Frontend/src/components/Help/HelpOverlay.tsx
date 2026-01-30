@@ -21,7 +21,7 @@ export const HelpOverlay = ({ onClose }: HelpOverlayProps) => {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    fetch("http://localhost:8000/api/languages")
+    fetch("https://chunksmith.onrender.com/api/languages")
       .then((res) => res.json())
       .then((data: LanguagesResponse) => {
         if (data.success) {
