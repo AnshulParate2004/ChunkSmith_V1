@@ -76,10 +76,15 @@ class ChatAgent:
         self.image_dir = str(settings.get_project_image_dir(project_id))
         
         # Load vector store (Supabase/Qdrant)
-        self.vector_manager = VectorStoreManager(embedding_model=settings.EMBEDDING_MODEL)
-        self.vectorstore = self.vector_manager.load_vector_store(
-            collection_name=project_id
-        )
+        try:
+            self.vector_manager = VectorStoreManager(embedding_model=settings.EMBEDDING_MODEL)
+            self.vectorstore = self.vector_manager.load_vector_store(
+                collection_name=project_id
+            )
+            print(f"✅ Vector store loaded successfully for project: {project_id}")
+        except Exception as e:
+            print(f"❌ Error loading vector store for project {project_id}: {e}")
+            raise Exception(f"Failed to initialize chat: Vector store not available for project '{project_id}'. Make sure documents have been processed first.") from e
         
         # Optimized system prompt
         self.system_prompt = """You are a helpful AI assistant that answers questions based on document content.
