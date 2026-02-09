@@ -35,11 +35,24 @@
 }
 \begin{document}
 \title{ChunkSmith: A Scalable, Asynchronous Multimodal Retrieval-Augmented Generation System for Semantic Visual Context Preservation in Enterprise Document Analysis}
-\author{\IEEEauthorblockN{1\textsuperscript{st} Anshul Parate}
-\IEEEauthorblockA{\textit{ChunkSmith Project} \\
-\textit{Github: AnshulParate2004/ChunkSmith}\\
-India \\
+\author{\IEEEauthorblockN{1\textsuperscript{st} Anshul N. Parate}
+\IEEEauthorblockA{\textit{Department of AIML} \\
+\textit{Ramdeobaba University}\\
+Nagpur, India \\
 anshulnparate@gmail.com}
+\and
+\IEEEauthorblockN{2\textsuperscript{nd} Ameya K. Saonerkar}
+\IEEEauthorblockA{\textit{Assistant Professor} \\
+\textit{Department of Electrical Engineering} \\
+\textit{Ramdeobaba University}\\
+Nagpur, India \\
+saonerkarak1@rknec.edu}
+\and
+\IEEEauthorblockN{3\textsuperscript{rd} Atharva A Tembhurnikar}
+\IEEEauthorblockA{\textit{Department of AIML} \\
+\textit{Ramdeobaba University}\\
+Nagpur, India \\
+tembhurnikaraa@rknec.edu}
 }
 \maketitle
 \begin{abstract}
@@ -56,7 +69,7 @@ The advent of Transformer-based models \cite{vaswani2017attention} brought about
 Most recently, Retrieval-Augmented Generation (RAG) \cite{lewis2020retrieval} has emerged as the dominant framework for extending the knowledge boundaries of LLMs. By retrieving relevant context from a vector database and injecting it into the model's prompt, RAG mitigates the twin problems of \textit{hallucination} (generating factually incorrect information) and \textit{knowledge cutoff} (inability to access recent data). This architecture has proven particularly valuable in enterprise settings where proprietary data cannot be included in model training.
 \subsection{The Modality Gap: A Critical Limitation}
 Despite these advancements, standard RAG implementations remain heavily text-centric. In professional settings, arguably the most valuable information is often non-textual. Consider the following scenarios:
-\begin{enumerate}[leftmargin=*]
+\begin{enumerate}
     \item A financial analyst querying quarterly revenue trends encoded in a multi-series line chart
     \item A medical researcher examining protein structure diagrams in a biochemistry paper
     \item An engineer referencing circuit schematics in a technical datasheet
@@ -75,7 +88,7 @@ This paper introduces **ChunkSmith**, a system explicitly architected to bridge 
 Our key insight is that while images cannot be directly embedded with the same fidelity as text, their \textit{semantic content} can be extracted and represented textually through careful prompting of capable MLLMs. This approach combines the best of both worlds: the reasoning capabilities of large multimodal models during ingestion, and the efficiency of text-optimized retrieval during query time.
 \subsection{Contributions}
 Our contributions are as follows:
-\begin{itemize}[leftmargin=*]
+\begin{itemize}
     \item \textbf{Deep Semantic Extraction}: A pipeline that extracts tables and images as separate objects and uses MLLMs to generate detailed interpretations, including visual reasoning and data point extraction.
     \item \textbf{Structured Prompt Engineering}: A methodology for prompting MLLMs to act as ``Question Generators,'' effectively pre-computing retrieval pathways and aligning document embeddings with potential user queries.
     \item \textbf{High-Throughput Architecture}: A robust asynchronous backend design with API key rotation to handle the high latency of multimodal inference, achieving near-linear speedup with the number of available API keys.
@@ -105,7 +118,7 @@ Recent work on visual instruction tuning \cite{liu2023visual} has shown that MLL
 \section{System Architecture}
 \begin{figure*}[htbp]
     \centering
-    \includegraphics[width=\textwidth]{1.png}
+    \includegraphics[width=\textwidth, height=0.98\textheight, keepaspectratio]{1.png}
     \caption{ChunkSmith System Architecture. The pipeline consists of three main stages: Ingestion (PDF processing and Layout Analysis via YOLOv12), Semantic Enrichment (utilizing Multimodal LLMs for deep understanding), and Retrieval (leveraging Vector Database for similarity search). The asynchronous scheduler ensures high throughput by rotating API keys.}
     \label{fig:architecture}
 \end{figure*}
@@ -113,14 +126,14 @@ The ChunkSmith architecture is designed as a modular, event-driven pipeline, as 
 \subsection{Ingestion Layer (The Gateway)}
 The entry point for the system is the Ingestion Layer, responsible for handling raw PDF uploads and initial validation.
 \subsubsection{File Handling}
-\begin{itemize}[leftmargin=*]
+\begin{itemize}
     \item \textbf{Hashing \& Deduplication}: Every uploaded file is hashed using SHA-256. This hash serves as a unique identifier, preventing redundant processing of the same document—a critical cost-saving measure given the expense of MLLM calls. The hash is computed on the raw binary content before any processing.
     \item \textbf{Validation}: Files are validated for MIME type (\texttt{application/pdf}), file size (configurable maximum of 50MB), and corruption (using \texttt{pypdf}'s validation routines) before passing to the processing queue.
     \item \textbf{Metadata Extraction}: Basic metadata (title, author, creation date, page count) is extracted and stored for later reference.
 \end{itemize}
 \subsubsection{Storage Architecture}
 ChunkSmith employs a hybrid storage strategy:
-\begin{itemize}[leftmargin=*]
+\begin{itemize}
     \item \textbf{Object Storage}: Raw PDFs and extracted images are stored in cloud object storage (e.g., S3, MinIO) for durability and accessibility.
     \item \textbf{Vector Database}: Vectors, document metadata, processing status, and structured enriched content are stored in the vector database, serving as the single source of truth for retrieval.
 \end{itemize}
@@ -128,7 +141,7 @@ ChunkSmith employs a hybrid storage strategy:
 The \texttt{ContentProcessor} class is the heart of ChunkSmith. It orchestrates the transformation of a raw binary PDF into a searchable \textit{Knowledge Base}.
 \subsubsection{Decomposition Strategy}
 We utilize a multi-stage decomposition strategy designed to preserve document structure while enabling parallel processing:
-\begin{enumerate}[leftmargin=*]
+\begin{enumerate}
     \item \textbf{Page Rendering}: \texttt{pdf2image} (wrapping Poppler) converts PDF pages into high-resolution images (300 DPI). This ensures that even vector graphics are captured accurately.
     
     \item \textbf{Layout Analysis}: We employ \textbf{YOLOv12} for high-precision layout detection. The model is fine-tuned to detect specific document elements, classifying regions into:
@@ -165,7 +178,7 @@ Keep(I) = \begin{cases}
 \end{cases}
 \end{equation}
 where $\theta_{area} = 10000$ pixels$^2$, $\phi_{min} = 0.2$, and $\phi_{max} = 5.0$. This filters out:
-\begin{itemize}[leftmargin=*]
+\begin{itemize}
     \item Navigational elements (arrows, bullets)
     \item Small icons and logos
     \item Decorative borders
@@ -198,7 +211,7 @@ class AIParser(BaseModel):
 This schema is passed to the MLLM using structured output features (e.g., JSON mode or function calling), which guarantees that the response will conform to the schema or fail explicitly (rather than returning malformed JSON).
 \subsubsection{Prompt Engineering}
 The prompt (shown in full in Listing \ref{lst:prompt}) employs several advanced techniques:
-\begin{itemize}[leftmargin=*]
+\begin{itemize}
     \item \textbf{Task Decomposition}: Breaking the analysis into distinct subtasks (facts, topics, questions, visual analysis, search terms)
     \item \textbf{Explicit Constraints}: Specifying exact list lengths to prevent hallucination
     \item \textbf{Findability Optimization}: Instructing the model to prioritize searchability over brevity
@@ -268,7 +281,7 @@ We use a high-performance vector store (e.g., \textbf{Qdrant}) due to its perfor
 V_D = \mathcal{E}\left( T_{original} \oplus S_{AI} \oplus Q_{AI} \oplus I_{desc} \oplus T_{table} \right)
 \end{equation}
 Where:
-\begin{itemize}[leftmargin=*]
+\begin{itemize}
     \item $\mathcal{E}$ is the embedding function (e.g., \texttt{text-embedding-3-large} or similar high-dimensional models)
     \item $T_{original}$ is the original extracted text
     \item $S_{AI}$ is the AI-generated summary
@@ -297,7 +310,7 @@ Given a user query $q$, the retrieval process can be formalized as:
 \mathcal{R}(q) = \text{TopK}\left( \{ (d_i, \text{sim}(V_q, V_{d_i})) \mid d_i \in \mathcal{D} \} \right)
 \end{equation}
 where:
-\begin{itemize}[leftmargin=*]
+\begin{itemize}
     \item $V_q = \mathcal{E}(q)$ is the query embedding
     \item $V_{d_i}$ is the document chunk embedding
     \item $\text{sim}(\cdot, \cdot)$ is cosine similarity
@@ -328,7 +341,7 @@ where $N_k$ is the number of chunks assigned to key $k$, $R_k$ is the rate limit
 \section{Implementation Details}
 \subsection{Technology Stack}
 ChunkSmith is implemented using the following technologies:
-\begin{itemize}[leftmargin=*]
+\begin{itemize}
     \item \textbf{Backend}: Python 3.10+, FastAPI, LangChain, Pydantic
     \item \textbf{Frontend}: React 18, TypeScript, TailwindCSS
     \item \textbf{Vector Database}: Any High-Performance Vector DB (e.g., Qdrant)
@@ -359,14 +372,14 @@ Top-K Retrieval & 5 & Standard for RAG systems \\ \bottomrule
 \section{Experimental Evaluation}
 \subsection{Experimental Setup}
 We evaluated ChunkSmith on a private corpus of 50 technical PDF documents, including:
-\begin{itemize}[leftmargin=*]
+\begin{itemize}
     \item 15 Intel CPU Datasheets (highly technical, many diagrams)
     \item 15 Financial 10-K Reports (dense tables, financial charts)
     \item 10 Medical Research Papers (molecular diagrams, statistical plots)
     \item 10 Engineering Textbooks (schematics, equations, graphs)
 \end{itemize}
 Total corpus statistics:
-\begin{itemize}[leftmargin=*]
+\begin{itemize}
     \item Total pages: 1,247
     \item Total images: 892
     \item Total tables: 456
@@ -374,7 +387,7 @@ Total corpus statistics:
 \end{itemize}
 \subsection{Throughput Analysis}
 We compared three ingestion configurations:
-\begin{enumerate}[leftmargin=*]
+\begin{enumerate}
     \item \textbf{Serial Baseline}: Single thread, single API key, synchronous processing
     \item \textbf{Naive Async}: Multi-threaded, single key (expected to hit rate limits)
     \item \textbf{ChunkSmith}: Async with 7-key rotation
@@ -394,19 +407,19 @@ Naive Async     & 40                  & 30\% (429 Errors)     & 0.13 \\
 As shown in Table \ref{tab:perf}, ChunkSmith achieves a 4.67x speedup compared to the serial baseline while maintaining 100\% reliability. The naive async approach fails catastrophically due to rate limiting.
 \subsection{Retrieval Quality Evaluation}
 We crafted a test set of 100 queries:
-\begin{itemize}[leftmargin=*]
+\begin{itemize}
     \item 50 "Visual Queries" (can only be answered by examining images/tables)
     \item 50 "Text Queries" (can be answered from text alone)
 \end{itemize}
 Example visual queries:
-\begin{itemize}[leftmargin=*]
+\begin{itemize}
     \item "What was the revenue in Q3 2022?" (requires reading a chart)
     \item "Show me the circuit diagram for the power supply" (requires image retrieval)
     \item "What is the p-value in the statistical analysis table?" (requires table reading)
 \end{itemize}
 \subsubsection{Metrics}
 We evaluated using:
-\begin{itemize}[leftmargin=*]
+\begin{itemize}
     \item \textbf{Recall@K}: Fraction of queries where the correct chunk appears in top-K results
     \item \textbf{MRR (Mean Reciprocal Rank)}: Average of $1/rank$ where rank is position of first relevant result
     \item \textbf{Human Evaluation}: Manual assessment of answer quality on 5-point scale
@@ -446,14 +459,14 @@ The question generation component provides the largest single contribution (+25\
 \section{Discussion}
 \subsection{Cost-Benefit Analysis}
 While ChunkSmith is more expensive than text-only RAG during ingestion, the cost is amortized over many queries. For a 100-page document:
-\begin{itemize}[leftmargin=*]
+\begin{itemize}
     \item \textbf{Text-Only RAG}: \$0.05 ingestion, 8\% visual query success
     \item \textbf{ChunkSmith}: \$2.10 ingestion, 92\% visual query success
 \end{itemize}
 For organizations where visual information is critical (finance, engineering, medicine), the 42x cost increase is justified by the 11.5x improvement in visual query success rate.
 \subsection{Scalability Considerations}
 ChunkSmith scales horizontally through:
-\begin{itemize}[leftmargin=*]
+\begin{itemize}
     \item \textbf{Stateless Processing}: Each chunk is processed independently
     \item \textbf{Cloud Storage}: Object storage handles scaling automatically
     \item \textbf{Vector DB Sharding}: Modern vector databases support distributed deployments
@@ -461,14 +474,14 @@ ChunkSmith scales horizontally through:
 Current bottleneck is MLLM API throughput, which scales linearly with the number of API keys.
 \subsection{Limitations and Future Work}
 Current limitations include:
-\begin{itemize}[leftmargin=*]
+\begin{itemize}
     \item \textbf{OCR Dependency}: Poor quality scans produce garbage text
     \item \textbf{Cost}: High ingestion cost may be prohibitive for some use cases
     \item \textbf{Latency}: 2-5 second MLLM calls add ingestion latency
     \item \textbf{Language Support}: Primarily tested on English documents
 \end{itemize}
 Future work will address these through:
-\begin{itemize}[leftmargin=*]
+\begin{itemize}
     \item \textbf{Local MLLM Integration}: Using quantized models like LLaVA 1.6
     \item \textbf{Video Support}: Extending to video frame sampling and transcription
     \item \textbf{GraphRAG}: Building knowledge graphs to link entities across chunks
