@@ -9,10 +9,17 @@
 \usepackage{xcolor}
 \usepackage{listings}
 \usepackage{hyperref}
+\hypersetup{
+    colorlinks=true,
+    linkcolor=black,
+    filecolor=black,      
+    urlcolor=black,
+    citecolor=black,
+}
 \usepackage{booktabs}
 \usepackage{multirow}
 \usepackage{subcaption}
-\usepackage{enumitem}
+
 \def\BibTeX{{\rm B\kern-.05em{\sc i\kern-.025em b}\kern-.08em
     T\kern-.1667em\lower.7ex\hbox{E}\kern-.125emX}}
 \lstset{
@@ -23,7 +30,7 @@
   keywordstyle=\color{blue},
   stringstyle=\color{red},
   showstringspaces=false,
-  numbers=left,
+  numbers=none,
   numberstyle=\tiny\color{gray}
 }
 \begin{document}
@@ -37,7 +44,7 @@ anshulnparate@gmail.com}
 \maketitle
 \begin{abstract}
 The paradigm of Retrieval-Augmented Generation (RAG) has fundamentally shifted the capabilities of Large Language Models (LLMs), allowing them to answer queries grounded in private, external data. However, a significant ``Modality Gap'' persists in enterprise definitions of RAG. Real-world documents—ranging from financial ledgers and scientific manuscripts to engineering schematics—encode a substantial portion of their specific knowledge in visual formats (charts, tables, diagrams). Traditional RAG pipelines, which predominantly rely on OCR-based text matching, strip away this visual context, reducing rich multimodal documents to flattened strings. This leads to hallucinations when models attempt to reason about visual trends or comparative data in tables.
-To address this critical deficiency, we present \textbf{ChunkSmith}, a production-grade Multimodal RAG system engineered for high-fidelity visual context preservation. ChunkSmith introduces a novel \textit{Schema-First} content processing architecture that treats images and tables not as auxiliary metadata, but as distinct, first-class semantic entities. By leveraging state-of-the-art Multimodal LLMs (Gemini 2.5 Pro) and a purposely designed \textit{Structured Semantic Enrichment} strategy, the system generates dense vector representations that encode deep visual understanding and ``predicted question'' affordances. We further detail the system's distributed backend, which employs an asynchronous Round-Robin Key Rotation algorithm to effectively bypass provider rate limits, achieving a 4.6x improvement in ingestion throughput over serial baselines. Extensive qualitative and quantitative evaluations demonstrate ChunkSmith's superior ability to handle complex visual reasoning tasks while maintaining scalable performance metrics suitable for large corpora.
+To address this critical deficiency, we present \textbf{ChunkSmith}, a production-grade Multimodal RAG system engineered for high-fidelity visual context preservation. ChunkSmith introduces a novel \textit{Schema-First} content processing architecture that treats images and tables not as auxiliary metadata, but as distinct, first-class semantic entities. By leveraging state-of-the-art \textbf{Multimodal LLMs} and a purposely designed \textit{Structured Semantic Enrichment} strategy, the system generates dense vector representations that encode deep visual understanding and ``predicted question'' affordances. We further detail the system's distributed backend, which employs an asynchronous Round-Robin Key Rotation algorithm to effectively bypass provider rate limits, achieving a 4.6x improvement in ingestion throughput over serial baselines. Extensive qualitative and quantitative evaluations demonstrate ChunkSmith's superior ability to handle complex visual reasoning tasks while maintaining scalable performance metrics suitable for large corpora.
 \end{abstract}
 \begin{IEEEkeywords}
 Multimodal RAG, Large Language Models, Document Analysis, Vector Search, Knowledge Retrieval, Asynchronous Processing, Semantic Enrichment, Visual Question Answering
@@ -49,12 +56,12 @@ The advent of Transformer-based models \cite{vaswani2017attention} brought about
 Most recently, Retrieval-Augmented Generation (RAG) \cite{lewis2020retrieval} has emerged as the dominant framework for extending the knowledge boundaries of LLMs. By retrieving relevant context from a vector database and injecting it into the model's prompt, RAG mitigates the twin problems of \textit{hallucination} (generating factually incorrect information) and \textit{knowledge cutoff} (inability to access recent data). This architecture has proven particularly valuable in enterprise settings where proprietary data cannot be included in model training.
 \subsection{The Modality Gap: A Critical Limitation}
 Despite these advancements, standard RAG implementations remain heavily text-centric. In professional settings, arguably the most valuable information is often non-textual. Consider the following scenarios:
-\begin{itemize}[leftmargin=*]
+\begin{enumerate}[leftmargin=*]
     \item A financial analyst querying quarterly revenue trends encoded in a multi-series line chart
     \item A medical researcher examining protein structure diagrams in a biochemistry paper
     \item An engineer referencing circuit schematics in a technical datasheet
     \item A legal professional analyzing tabular evidence in a court document
-\end{itemize}
+\end{enumerate}
 In each case, the critical information exists primarily in visual form. A sudden dip in a revenue chart, a complex chemical structure in a patent, or a specific architectural layout in a blueprint—these are the details users interact with most intensely.
 When a standard RAG ingestion pipeline processes a PDF, it typically employs an Optical Character Recognition (OCR) engine like Tesseract or AWS Textract to scrape text. During this process, complex figures are either:
 \begin{enumerate}
@@ -73,7 +80,7 @@ Our contributions are as follows:
     \item \textbf{Structured Prompt Engineering}: A methodology for prompting MLLMs to act as ``Question Generators,'' effectively pre-computing retrieval pathways and aligning document embeddings with potential user queries.
     \item \textbf{High-Throughput Architecture}: A robust asynchronous backend design with API key rotation to handle the high latency of multimodal inference, achieving near-linear speedup with the number of available API keys.
     \item \textbf{Visual Evidence Retrieval}: A user interaction model that retrieves and displays the \textit{source image} alongside the AI-generated answer for verification, enhancing trust and interpretability.
-    \item \textbf{Production-Ready Implementation}: A complete system built with FastAPI, React, Qdrant, and Supabase, demonstrating the practical viability of the approach.
+    \item \textbf{Production-Ready Implementation}: A complete system built with FastAPI, React, a Vector Database, and Object Storage, demonstrating the practical viability of the approach.
 \end{itemize}
 \section{Related Work}
 \subsection{Retrieval-Augmented Generation}
@@ -88,15 +95,21 @@ Models like ColPali \cite{faysse2024colpali} represent a radical departure from 
 ColQwen2 extends this approach with dynamic resolution handling, allowing the model to process documents at multiple scales. However, the computational cost remains prohibitive for large-scale deployments.
 \subsubsection{Caption-Based Approaches}
 Earlier works \cite{hu2023reveal} attempted to use standard image captioning models (like BLIP-2) to generate text descriptions for images. The rationale was simple: convert images to text, then use standard text RAG. However, generic captions (e.g., ``A graph of a function'') are insufficient for answering specific questions about data points. 
-REVEAL \cite{hu2023reveal} improved upon this by using contrastive learning to align visual and textual representations, but still relied on relatively shallow image descriptions. ChunkSmith improves upon this by using Large MLLMs (Gemini Pro) rather than smaller captioning models, enabling ``Reasoning-based Description'' rather than simple captioning.
+REVEAL \cite{hu2023reveal} improved upon this by using contrastive learning to align visual and textual representations, but still relied on relatively shallow image descriptions. ChunkSmith improves upon this by using Large MLLMs rather than smaller captioning models, enabling ``Reasoning-based Description'' rather than simple captioning.
 \subsubsection{Hybrid Approaches}
 ChunkSmith falls into the hybrid category, similarly to Unstructured.io's processing philosophy but adds a unique semantic layer. By generating ``Potential Questions'' alongside the description, we align the document embedding space with the user query space, a technique known as Document Expansion \cite{nogueira2019document} applied to the multimodal domain.
 Other hybrid systems like MuRAG \cite{chen2022murag} and RA-CM3 \cite{yasunaga2023retrieval} combine text and image retrieval but do not employ the structured semantic enrichment strategy that ChunkSmith introduces.
 \subsection{Multimodal Large Language Models}
-The recent explosion in MLLM capabilities has been driven by models like GPT-4V, Gemini Pro Vision, and LLaVA. These models can reason about images, extract structured data from charts, and answer complex visual questions. ChunkSmith leverages Gemini 2.5 Pro for its strong performance on chart understanding and structured output capabilities.
+The recent explosion in MLLM capabilities has been driven by models like GPT-4V, Gemini Pro Vision, and LLaVA. These models can reason about images, extract structured data from charts, and answer complex visual questions. ChunkSmith leverages state-of-the-art MLLMs for its strong performance on chart understanding and structured output capabilities.
 Recent work on visual instruction tuning \cite{liu2023visual} has shown that MLLMs can be fine-tuned to follow specific formatting instructions, which is critical for our structured output requirements.
 \section{System Architecture}
-The ChunkSmith architecture is designed as a modular, event-driven pipeline. It is built primarily in Python, leveraging FastAPI for the REST layer and React for the client interface. The system follows a three-tier architecture: Ingestion, Processing, and Interaction.
+\begin{figure*}[htbp]
+    \centering
+    \includegraphics[width=\textwidth]{1.png}
+    \caption{ChunkSmith System Architecture. The pipeline consists of three main stages: Ingestion (PDF processing and Layout Analysis via YOLOv12), Semantic Enrichment (utilizing Multimodal LLMs for deep understanding), and Retrieval (leveraging Vector Database for similarity search). The asynchronous scheduler ensures high throughput by rotating API keys.}
+    \label{fig:architecture}
+\end{figure*}
+The ChunkSmith architecture is designed as a modular, event-driven pipeline, as illustrated in Fig. \ref{fig:architecture}. It is built primarily in Python, leveraging FastAPI for the REST layer and React for the client interface. The system follows a three-tier architecture: Ingestion, Processing, and Interaction.
 \subsection{Ingestion Layer (The Gateway)}
 The entry point for the system is the Ingestion Layer, responsible for handling raw PDF uploads and initial validation.
 \subsubsection{File Handling}
@@ -108,9 +121,8 @@ The entry point for the system is the Ingestion Layer, responsible for handling 
 \subsubsection{Storage Architecture}
 ChunkSmith employs a hybrid storage strategy:
 \begin{itemize}[leftmargin=*]
-    \item \textbf{Object Storage (Supabase)}: Raw PDFs and extracted images are stored in cloud object storage for durability and accessibility.
-    \item \textbf{Vector Database (Qdrant)}: Embeddings and metadata are stored in Qdrant for fast similarity search.
-    \item \textbf{Relational Database}: Document metadata, processing status, and user information are stored in PostgreSQL (via Supabase).
+    \item \textbf{Object Storage}: Raw PDFs and extracted images are stored in cloud object storage (e.g., S3, MinIO) for durability and accessibility.
+    \item \textbf{Vector Database}: Vectors, document metadata, processing status, and structured enriched content are stored in the vector database, serving as the single source of truth for retrieval.
 \end{itemize}
 \subsection{The Content Processor (The Core)}
 The \texttt{ContentProcessor} class is the heart of ChunkSmith. It orchestrates the transformation of a raw binary PDF into a searchable \textit{Knowledge Base}.
@@ -119,12 +131,16 @@ We utilize a multi-stage decomposition strategy designed to preserve document st
 \begin{enumerate}[leftmargin=*]
     \item \textbf{Page Rendering}: \texttt{pdf2image} (wrapping Poppler) converts PDF pages into high-resolution images (300 DPI). This ensures that even vector graphics are captured accurately.
     
-    \item \textbf{Layout Analysis}: We employ \texttt{unstructured.io}'s partition API or custom heuristics to identify bounding boxes for distinct elements. The system detects:
+    \item \textbf{Layout Analysis}: We employ \textbf{YOLOv12} for high-precision layout detection. The model is fine-tuned to detect specific document elements, classifying regions into:
     \begin{itemize}
-        \item Text blocks (paragraphs, headings)
-        \item Tables (identified by grid patterns)
-        \item Images (embedded graphics, charts, diagrams)
-        \item Equations (mathematical notation)
+        \item \texttt{UncategorizedText}
+        \item \texttt{PageNumber}
+        \item \texttt{Table}
+        \item \texttt{Footer}
+        \item \texttt{Title}
+        \item \texttt{Formula}
+        \item \texttt{Image}
+        \item \texttt{NarrativeText}
     \end{itemize}
     
     \item \textbf{OCR Application}: Tesseract OCR is applied to text regions. Tesseract is configured with:
@@ -155,13 +171,13 @@ where $\theta_{area} = 10000$ pixels$^2$, $\phi_{min} = 0.2$, and $\phi_{max} = 
     \item Decorative borders
     \item Extremely narrow or wide artifacts
 \end{itemize}
-Valid images are uploaded to Supabase Storage with a structured path:
+Valid images are uploaded to Object Storage with a structured path:
 \begin{verbatim}
 {project_id}/images/image_{counter:04d}.png
 \end{verbatim}
 Their local paths are swapped for public URLs in the metadata, ensuring the frontend can render them later without additional authentication.
 \subsection{Structured Semantic Enrichment}
-This is the system's primary innovation. Raw text extraction from a complex chart is often gibberish. Instead, we pass the image of the chart to Gemini 2.5 Pro with a \textbf{Structured Prompt}.
+This is the system's primary innovation. Raw text extraction from a complex chart is often gibberish. Instead, we pass the image of the chart to a Multimodal LLM with a \textbf{Structured Prompt}.
 \subsubsection{The AIParser Schema}
 We define a Pydantic model that enforces strict output structure:
 \begin{lstlisting}[language=Python, caption=AIParser Schema Definition]
@@ -179,7 +195,7 @@ class AIParser(BaseModel):
         description="Row-column analysis of each table"
     )
 \end{lstlisting}
-This schema is passed to the MLLM using Gemini's structured output feature, which guarantees that the response will conform to the schema or fail explicitly (rather than returning malformed JSON).
+This schema is passed to the MLLM using structured output features (e.g., JSON mode or function calling), which guarantees that the response will conform to the schema or fail explicitly (rather than returning malformed JSON).
 \subsubsection{Prompt Engineering}
 The prompt (shown in full in Listing \ref{lst:prompt}) employs several advanced techniques:
 \begin{itemize}[leftmargin=*]
@@ -188,7 +204,7 @@ The prompt (shown in full in Listing \ref{lst:prompt}) employs several advanced 
     \item \textbf{Findability Optimization}: Instructing the model to prioritize searchability over brevity
     \item \textbf{Vocabulary Preservation}: Requesting that the model use words similar to the original content
 \end{itemize}
-\begin{lstlisting}[language=Python, caption=The Semantic Enrichment Prompt, label=lst:prompt]
+\begin{lstlisting}[language=Python, caption=The Semantic Enrichment Prompt, label=lst:prompt, basicstyle=\ttfamily\scriptsize\color{black}, keywordstyle=\color{black}, stringstyle=\color{black}]
 prompt_text = f"""You are creating a searchable description for document content retrieval.
 YOUR TASK:
 Generate a comprehensive, searchable description that covers:
@@ -247,21 +263,21 @@ We leverage Python's \texttt{asyncio.gather} with a semaphore to limit concurren
 \end{algorithm}
 The semaphore ensures that even with many chunks, we never exceed the concurrency limit, preventing connection pool exhaustion.
 \subsection{Vector Storage Schema}
-We use \textbf{Qdrant} as the vector store due to its performance characteristics and support for scalar quantization. The vector embedding is computed as:
+We use a high-performance vector store (e.g., \textbf{Qdrant}) due to its performance characteristics and support for scalar quantization. The vector embedding is computed as:
 \begin{equation}
 V_D = \mathcal{E}\left( T_{original} \oplus S_{AI} \oplus Q_{AI} \oplus I_{desc} \oplus T_{table} \right)
 \end{equation}
 Where:
 \begin{itemize}[leftmargin=*]
-    \item $\mathcal{E}$ is the embedding function (\texttt{gemini-embedding-001}, 768 dimensions)
+    \item $\mathcal{E}$ is the embedding function (e.g., \texttt{text-embedding-3-large} or similar high-dimensional models)
     \item $T_{original}$ is the original extracted text
     \item $S_{AI}$ is the AI-generated summary
     \item $Q_{AI}$ is the list of predicted questions
     \item $I_{desc}$ is the detailed image interpretation
     \item $T_{table}$ is the table interpretation
 \end{itemize}
-The concatenation operator $\oplus$ represents string concatenation with appropriate delimiters. The final payload stored in Qdrant includes:
-\begin{lstlisting}[language=Python, caption=Qdrant Payload Structure]
+The concatenation operator $\oplus$ represents string concatenation with appropriate delimiters. The final payload stored in the vector database includes:
+\begin{lstlisting}[language=Python, caption=Vector Payload Structure]
 payload = {
     "chunk_index": int,
     "original_text": str,
@@ -292,7 +308,7 @@ The cosine similarity is computed as:
 \begin{equation}
 \text{sim}(V_q, V_d) = \frac{V_q \cdot V_d}{\|V_q\| \|V_d\|}
 \end{equation}
-Qdrant optimizes this computation using HNSW (Hierarchical Navigable Small World) graphs, achieving sub-linear search complexity.
+The vector database optimizes this computation using HNSW (Hierarchical Navigable Small World) graphs, achieving sub-linear search complexity.
 \subsection{Cost and Latency Modeling}
 The total ingestion cost for a document can be modeled as:
 \begin{equation}
@@ -315,12 +331,12 @@ ChunkSmith is implemented using the following technologies:
 \begin{itemize}[leftmargin=*]
     \item \textbf{Backend}: Python 3.10+, FastAPI, LangChain, Pydantic
     \item \textbf{Frontend}: React 18, TypeScript, TailwindCSS
-    \item \textbf{Vector Database}: Qdrant Cloud
-    \item \textbf{Object Storage}: Supabase Storage
-    \item \textbf{MLLM Provider}: Google Gemini 2.5 Pro
-    \item \textbf{Embedding Model}: gemini-embedding-001 (768 dimensions)
+    \item \textbf{Vector Database}: Any High-Performance Vector DB (e.g., Qdrant)
+    \item \textbf{Object Storage}: Any S3-compatible Storage (e.g., Supabase)
+    \item \textbf{MLLM Provider}: Multimodal LLM (e.g., Gemini, GPT-4V)
+    \item \textbf{Embedding Model}: High-dimensional Text Embedding
     \item \textbf{OCR}: Tesseract 5.0+
-    \item \textbf{PDF Processing}: pypdf, pdf2image, Poppler
+    \item \textbf{Layout Analysis}: YOLOv12
 \end{itemize}
 \subsection{Configuration Parameters}
 Key configuration parameters and their rationale:
@@ -439,8 +455,8 @@ For organizations where visual information is critical (finance, engineering, me
 ChunkSmith scales horizontally through:
 \begin{itemize}[leftmargin=*]
     \item \textbf{Stateless Processing}: Each chunk is processed independently
-    \item \textbf{Cloud Storage}: Supabase handles storage scaling automatically
-    \item \textbf{Vector DB Sharding}: Qdrant supports distributed deployments
+    \item \textbf{Cloud Storage}: Object storage handles scaling automatically
+    \item \textbf{Vector DB Sharding}: Modern vector databases support distributed deployments
 \end{itemize}
 Current bottleneck is MLLM API throughput, which scales linearly with the number of API keys.
 \subsection{Limitations and Future Work}
@@ -479,5 +495,36 @@ As multimodal AI continues to evolve, systems like ChunkSmith will become increa
 \bibitem{chen2022murag} J. Chen, et al., ``MuRAG: Multimodal Retrieval-Augmented Generator,'' \textit{arXiv preprint}, 2022.
 \bibitem{yasunaga2023retrieval} M. Yasunaga, et al., ``Retrieval-Augmented Multimodal Language Modeling,'' in \textit{Proc. ICML}, 2023.
 \bibitem{liu2023visual} H. Liu, et al., ``Visual Instruction Tuning,'' in \textit{Proc. NeurIPS}, 2023.
+
+\bibitem{hybridrag2025}
+``Hybrid RAG-empowered Multi-modal LLM for Secure Data Management,'' \textit{arXiv preprint}, 2025.
+
+\bibitem{msier2025}
+``MSIER: Textual Effects on Multimodal In-Context Retrieval,'' \textit{arXiv preprint}, 2025.
+
+\bibitem{rule2025}
+``RULE: Reliable Multimodal RAG for Medical VQA Factuality,'' \textit{arXiv preprint}, 2025.
+
+\bibitem{m2raap2025}
+``M2-RAAP: Multi-Modal Recipe for Zero-shot Video-Text Retrieval,'' \textit{arXiv preprint}, 2025.
+
+\bibitem{ramm2025}
+``RAMM: Retrieval-Augmented Biomedical VQA,'' \textit{arXiv preprint}, 2025.
+
+\bibitem{cornellius2025}
+CornelliusYW, ``Multimodal RAG with CLIP/Whisper/Qwen-VL,'' GitHub repository, 2025. [Online]. Available: \url{https://github.com/CornelliusYW/Multimodal-RAG}
+
+\bibitem{ahmedal2024}
+AhmedAl93, ``Agentic Multimodal RAG,'' GitHub repository, 2024. [Online]. Available: \url{https://github.com/AhmedAl93/Agentic-Multimodal-RAG}
+
+\bibitem{azure2024}
+Azure-Samples, ``Azure Multimodal RAG with Code Execution,'' GitHub repository, 2024. [Online]. Available: \url{https://github.com/Azure-Samples/multimodal-rag-code-execution}
+
+\bibitem{aishwaryanr2025}
+aishwaryanr, ``Most Impactful RAG Papers Table,'' GitHub repository, 2025. [Online]. Available: \url{https://github.com/aishwaryanr/RAG_Papers}
+
+\bibitem{genesis2025}
+``Top 25 Types of RAG,'' Genesis Human Experience Blog, 2025. [Online]. Available: \url{https://genesishumanexperience.com}
+
 \end{thebibliography}
 \end{document}

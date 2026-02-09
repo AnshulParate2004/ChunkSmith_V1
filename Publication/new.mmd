@@ -1,0 +1,62 @@
+%%{init: {'theme': 'base', 'themeVariables': { 'fontFamily': 'Times New Roman', 'fontSize': '12px'}}}%%
+flowchart TB
+ subgraph Client["Client Interface (React)"]
+        UI["User Interface"]
+        Upload["PDF Upload"]
+        Query["User Query"]
+  end
+ subgraph API["FastAPI Backend"]
+        IngestAPI["Ingestion Endpoint"]
+        RetrievalAPI["Retrieval Endpoint"]
+        Scheduler["Async Scheduler"]
+  end
+ subgraph Enrichment["Semantic Enrichment"]
+        Gemini["Multimodal LLM"]
+        Prompt["Structured Prompt"]
+  end
+ subgraph Processing["Content Processor"]
+        PDF["PDF Processing"]
+        OCR["Tesseract OCR"]
+        Layout["Layout Analysis (YOLOv12)"]
+        Enrichment
+  end
+ subgraph Storage["Data Persistence"]
+        SupabaseObj["Bucket Storage (Images/PDFs)"]
+        Qdrant["Vector DB (Vectors + Metadata)"]
+  end
+    UI -- "1. Upload PDF" --> Upload
+    Upload -- "2. Send File" --> IngestAPI
+    IngestAPI -- "3. Validate & Hash" --> PDF
+    PDF -- "4. Render Pages" --> Layout
+    Layout -- "5. Extract Text/Tables" --> OCR
+    Layout -- "5. Extract Images" --> SupabaseObj
+    OCR -- "6. Chunks" --> Scheduler
+    SupabaseObj -- "6. Image URLs" --> Scheduler
+    Scheduler -- "7. Round-Robin API Calls" --> Gemini
+    Prompt -- Context --> Gemini
+    Gemini -- "8. Structured Output (Summary, Questions, Interpretation)" --> Qdrant
+    Gemini -- "9. Vectors" --> Qdrant
+    Query -- "1. Search" --> RetrievalAPI
+    RetrievalAPI -- "2. Embed Query" --> Gemini
+    Gemini -- "3. Query Vector" --> Qdrant
+    Qdrant -- "4. Top-K Chunks + Metadata" --> RetrievalAPI
+    RetrievalAPI -- "5. Generate Answer" --> Gemini
+    Gemini -- "6. Final Response" --> UI
+
+     UI:::component
+     Upload:::component
+     Query:::component
+     IngestAPI:::process
+     RetrievalAPI:::process
+     Scheduler:::process
+     Gemini:::external
+     Prompt:::process
+     PDF:::process
+     OCR:::external
+     Layout:::process
+     SupabaseObj:::storage
+     Qdrant:::storage
+    classDef storage fill:#ffecb3,stroke:#ff6f00,stroke-width:2px,color:#000
+    classDef process fill:#bbdefb,stroke:#0d47a1,stroke-width:2px,color:#000
+    classDef component fill:#e1bee7,stroke:#4a148c,stroke-width:2px,color:#000
+    classDef external fill:#c8e6c9,stroke:#1b5e20,stroke-width:2px,color:#000
