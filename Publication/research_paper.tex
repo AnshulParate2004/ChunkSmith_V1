@@ -35,24 +35,30 @@
 }
 \begin{document}
 \title{ChunkSmith: A Scalable, Asynchronous Multimodal Retrieval-Augmented Generation System for Semantic Visual Context Preservation in Enterprise Document Analysis}
-\author{\IEEEauthorblockN{1\textsuperscript{st} Anshul N. Parate}
-\IEEEauthorblockA{\textit{Department of Artificial Intelligence and Machine Learning} \\
-\textit{Ramdeobaba University}\\
+\author{
+
+\IEEEauthorblockN{1\textsuperscript{st} Ameya K. Saonerkar}
+\IEEEauthorblockA{\textit{Department of Electrical } \\
+\textit{Engineering} \\
+\textit{Ramdeobaba University} \\
 Nagpur, India \\
-anshulnparate@gmail.com}
+saonerkarak@rknec.edu}
 \and
-\IEEEauthorblockN{2\textsuperscript{nd} Ameya K. Saonerkar}
-\IEEEauthorblockA{\textit{Assistant Professor} \\
-\textit{Department of Electrical Engineering} \\
-\textit{Ramdeobaba University}\\
-Nagpur, India \\
-saonerkarak1@rknec.edu}
-\and
-\IEEEauthorblockN{3\textsuperscript{rd} Atharva A Tembhurnikar}
-\IEEEauthorblockA{\textit{Department of Artificial Intelligence and Machine Learning} \\
-\textit{Ramdeobaba University}\\
+\IEEEauthorblockN{2\textsuperscript{nd} Atharva Tembhurnikar}
+\IEEEauthorblockA{\textit{Department of Computer Science and} \\
+\textit{Engineering (AIML)} \\
+\textit{Ramdeobaba University} \\
 Nagpur, India \\
 tatharva0906@gmail.com}
+\and
+\IEEEauthorblockN{3\textsuperscript{rd}Anshul  Parate}
+\IEEEauthorblockA{\textit{Department of Computer Science and} \\
+\textit{Engineering (AIML)} \\
+\textit{Ramdeobaba University} \\
+Nagpur, India \\
+anshulnparateweb@gmail.com}
+
+
 }
 \maketitle
 
@@ -106,7 +112,7 @@ The field of Multimodal RAG is nascent but rapidly expanding. Abootorabi et al. 
 \begin{enumerate}
     \item \textbf{Vision-Centric Approaches}: Models like ColPali \cite{faysse2024colpali} represent a radical departure from OCR. They embed entire document pages as image patches using Vision Transformers (ViT). The system processes documents as pure images, bypassing text extraction entirely. While this preserves layout perfectly and can handle handwritten text or complex formatting, it introduces massive storage overhead (embedding every patch of every page) and requires specialized retrieval infrastructure (e.g., late interaction scoring with MaxSim operations), which is difficult to scale in commodity vector databases. ColQwen2 extends this approach with dynamic resolution handling, allowing the model to process documents at multiple scales. However, the computational cost remains prohibitive for large scale deployments.
     \item \textbf{Caption-Based Approaches}: Earlier works \cite{hu2023reveal} attempted to use standard image captioning models (like BLIP-2) to generate text descriptions for images. The rationale was simple: convert images to text, then use standard text RAG. However, generic captions (e.g., ``A graph of a function'') are insufficient for answering specific questions about data points. REVEAL \cite{hu2023reveal} improved upon this by using contrastive learning to align visual and textual representations, but still relied on relatively shallow image descriptions. ChunkSmith improves upon this by using Large MLLMs rather than smaller captioning models, enabling ``Reasoning-based Description'' rather than simple captioning.
-    \item \textbf{Hybrid Approaches}: ChunkSmith falls into the hybrid category, similarly to Unstructured.io's processing philosophy but adds a unique semantic layer. By generating ``Potential Questions'' alongside the description, we align the document embedding space with the user query space, a technique known as Document Expansion \cite{nogueira2019document} applied to the multimodal domain. Other hybrid systems like MuRAG \cite{chen2022murag} and RA-CM3 \cite{yasunaga2023retrieval} combine text and image retrieval but do not employ the structured semantic enrichment strategy that ChunkSmith introduces.
+    \item \textbf{Hybrid Approaches}: ChunkSmith falls into the hybrid category, similarly to Unstructured processing philosophy but adds a unique semantic layer. By generating ``Potential Questions'' alongside the description, we align the document embedding space with the user query space, a technique known as Document Expansion \cite{nogueira2019document} applied to the multimodal domain. Other hybrid systems like MuRAG \cite{chen2022murag} and RA-CM3 \cite{yasunaga2023retrieval} combine text and image retrieval but do not employ the structured semantic enrichment strategy that ChunkSmith introduces.
 \end{enumerate}
 
 \subsection{Multimodal Large Language Models}
@@ -116,7 +122,7 @@ The recent explosion in MLLM capabilities has been driven by models like GPT-4V,
 \begin{figure*}[htbp]
     \centering
     \includegraphics[width=\textwidth, height=0.98\textheight, keepaspectratio]{1.png}
-    \caption{ChunkSmith System Architecture. The pipeline consists of three main stages: Ingestion (PDF processing and Layout Analysis via YOLOv12), Semantic Enrichment (utilizing Multimodal LLMs for deep understanding), and Retrieval (leveraging Vector Database for similarity search). The asynchronous scheduler ensures high throughput by rotating API keys.}
+    \caption{ChunkSmith System Architecture. The API Key Pool is used exclusively during the Multimodal Semantic Enrichment phase to enable high-throughput asynchronous MLLM inference via round-robin key rotation. Generated structured semantic outputs are subsequently embedded and stored in the vector database for retrieval.}
     \label{fig:architecture}
 \end{figure*}
 
@@ -143,7 +149,7 @@ The ContentProcessor class is the heart of ChunkSmith. It orchestrates the trans
 We utilize a multi-stage decomposition strategy designed to preserve document structure while enabling parallel processing:
 \begin{enumerate}
     \item \textbf{Page Rendering}: pdf2image (wrapping Poppler) converts PDF pages into high-resolution images (300 DPI). This ensures that even vector graphics are captured accurately.
-    \item \textbf{Layout Analysis}: We employ YOLOv12 for high precision layout detection. The model is fine-tuned to detect specific document elements, classifying regions into:
+    \item \textbf{Layout Analysis}: We employ YOLOv11 for high precision layout detection. The model is fine-tuned to detect specific document elements, classifying regions into:
     \begin{itemize}
         \item UncategorizedText
         \item PageNumber
@@ -245,7 +251,7 @@ TABLES: {tables}
 """
 \end{lstlisting}
 
-\subsection{Asynchronous Backend Architecture}
+\subsection{Asynchronous Multimodal Inference}
 MLLM API calls are slow (2-5 seconds per request) and rate-limited (typically 60 requests per minute per key). Serial processing of a 50-page document would take minutes. ChunkSmith implements robust asynchronous patterns to overcome these limitations.
 \begin{enumerate}
     \item \textbf{Round-Robin Key Rotation}: We maintain a pool of API Keys $\mathcal{K} = \{k_1, k_2, ..., k_n\}$. For a batch of chunks $\mathcal{C} = \{c_1, c_2, ..., c_m\}$, the scheduler assigns:
@@ -306,6 +312,15 @@ payload = {
 }
 \end{lstlisting}
 
+\subsection{Context-Aware Information Retrieval}
+To optimize the utilization of the multimodal context window, we introduce a Context Manager downstream of the retrieval layer.
+\subsubsection{Context Storage and Management}
+A Context Manager is introduced after vector retrieval to track multimodal context. If an image is already present in the LLM context window, it is not re-injected, thereby reducing redundant context, token overhead, and hallucination. The data flow is updated as follows:
+\begin{equation}
+Vector Database \rightarrow Context Manager \rightarrow LLM
+\end{equation}
+The LLM maintains a multimodal context state (text + images). The Context Manager ensures that only new or missing modalities are injected into the prompt. Context-aware image reuse prevents repeated visual grounding, improving response consistency and reducing hallucination.
+
 \section{Methodology}
 \subsection{Mathematical Formulation of Retrieval}
 Given a user query $q$, the retrieval process can be formalized as:
@@ -354,7 +369,7 @@ ChunkSmith is implemented using the following technologies:
     \item \textbf{MLLM Provider}: Multimodal LLM (e.g., Gemini, GPT-4V)
     \item \textbf{Embedding Model}: High-dimensional Text Embedding
     \item \textbf{OCR}: Tesseract 5.0+
-    \item \textbf{Layout Analysis}: YOLOv12
+    \item \textbf{Layout Analysis}: YOLOv11
 \end{itemize}
 
 \subsection{Configuration Parameters}

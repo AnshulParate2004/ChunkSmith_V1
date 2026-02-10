@@ -1,78 +1,131 @@
-%%{init: {'theme': 'base', 'themeVariables': { 'fontFamily': 'Times New Roman', 'fontSize': '50px'}}}%%
+%%{init: {'theme': 'base', 'themeVariables': { 'fontFamily': 'Times New Roman', 'fontSize': '14px'}}}%%
 flowchart TB
-    %% Level 1: Client Layer (Horizontal Row)
-    subgraph Client [Client Interface]
+    %% --- Tier 1: Interaction Layer ---
+    subgraph Client [Client Interaction Layer]
         direction LR
-        UI["User Interface"]
-        Upload["PDF Upload"]
-        Query["User Query"]
+        User((User))
+        UI[React Frontend Interface]
+        UploadHook[File Upload Hook]
+        QueryHook[Chat Interface Hook]
     end
 
-    %% Level 2: API Layer (Horizontal Row)
-    subgraph API [FastAPI Backend]
-        direction LR
-        IngestAPI["Ingestion Endpoint"]
-        Scheduler["Async Scheduler"]
-        RetrievalAPI["Retrieval Endpoint"]
+    %% --- Tier 2: API Gateway Layer ---
+    subgraph Gateway [API Gateway]
+        direction TB
+        IngestEP[POST /ingest Endpoint]
+        RetrieveEP[POST /chat Endpoint]
+        Auth[Authentication Middleware]
     end
 
-    %% Level 3: Processing Layer (Horizontal Row)
-    subgraph Processing [Content Processor]
-        direction LR
-        PDF["PDF Processing"]
-        Layout["Layout Analysis\n(YOLOv12)"]
-        OCR["Tesseract OCR"]
+    %% --- Tier 3: Ingestion and Processing Core ---
+    subgraph Core [Core Processing Engine]
+        direction TB
+        
+        subgraph Validation [Step 1: Validation and Deduplication]
+            direction LR
+            Hasher[SHA-256 Hasher]
+            MimeCheck[MIME Type Validator]
+            Dedup{Duplicate Check}
+        end
+
+        subgraph Decomposition [Step 2: Decomposition Strategy]
+            direction TB
+            PDFRender[pdf2image Renderer\n300 DPI]
+            YOLO[Layout Analysis Model\nYOLOv11]
+            Filter{Visual Object Filter\nArea/Aspect Ratio}
+        end
+
+        subgraph Extraction [Step 3: Text and Data Extraction]
+            direction LR
+            OCR[Tesseract OCR\nLSTM Engine]
+            TableExt[Table Structure Extraction]
+            Chunker[Sliding Window Chunker\nSize=3000, Stride=2800]
+        end
     end
 
-    %% Level 4: Intelligence (Horizontal Row)
-    subgraph Intelligence [Semantic Enrichment]
-        direction LR
-        Prompt["Structured Prompt"]
-        Gemini["Multimodal LLM"]
+    %% --- Tier 4: Semantic Enrichment ---
+    subgraph Intelligence [Multimodal Semantic Enrichment]
+        direction TB
+        Prompt[Structured Prompt Builder\nTask Decomposition]
+        
+        subgraph InferBackend [Asynchronous Inference Backend]
+            direction TB
+            Scheduler[Async Scheduler\nSemaphore Concurrency=15]
+            KeyPool[API Key Rotation Pool\nRound-Robin]
+            MLLM[Multimodal LLM\nGemini/GPT-4V]
+        end
+        
+        Parser[AI Output Parser\nPydantic Validation]
     end
 
-    %% Level 5: Storage (Horizontal Row)
-    subgraph Storage [Data Persistence]
-        direction LR
-        SupabaseObj["Bucket Storage"]
-        Qdrant["Vector DB"]
+    %% --- Tier 5: Storage Infrastructure ---
+    subgraph Persistence [Data Persistence Layer]
+        direction TB
+        subgraph BlobStore [Object Storage]
+            Bucket[S3/MinIO Bucket\nRaw Images and PDFs]
+        end
+        
+        subgraph VectorStore [Vector Database]
+            Qdrant[Qdrant Collection]
+            EmbedModel[Embedding Model\nHigh-Dimensional]
+        end
     end
 
-    %% Connections Flow: Client -> API -> Process -> Intel -> Storage
-    UI --> Upload
-    Upload --> IngestAPI
-    Query --> RetrievalAPI
+    %% --- Tier 6: Retrieval and Generation ---
+    subgraph GenFlow [Retrieval and Generation Flow]
+        direction TB
+        VectorSearch[HNSW Vector Search\nTop-K Retrieval]
+        ContextManage[Context Manager\nDeduplication Logic]
+        RAGAgent[Generation Agent]
+    end
 
-    IngestAPI --> PDF
-    PDF --> Layout
-    Layout --> OCR
-    OCR --> Scheduler
-    Layout --> SupabaseObj
+    %% ================= CONNECTIONS =================
 
-    Scheduler --> Gemini
-    Prompt --> Gemini
-    Gemini --> Qdrant
-    SupabaseObj --> Scheduler
+    %% User Interaction
+    User --> UI
+    UI --> UploadHook
+    UI --> QueryHook
+    UploadHook --> Auth --> IngestEP
+    QueryHook --> Auth --> RetrieveEP
 
-    RetrievalAPI --> Gemini
-    Gemini --> Qdrant
-    Qdrant --> RetrievalAPI
-    RetrievalAPI --> UI
+    %% Ingestion Pipeline
+    IngestEP --> Hasher --> Dedup
+    Dedup -->|New File| MimeCheck --> PDFRender
+    Dedup -->|Exists| End((End))
 
-     UI:::component
-     Upload:::component
-     Query:::component
-     IngestAPI:::process
-     RetrievalAPI:::process
-     Scheduler:::process
-     Gemini:::external
-     Prompt:::process
-     PDF:::process
-     OCR:::external
-     Layout:::process
-     SupabaseObj:::storage
-     Qdrant:::storage
-     classDef storage fill:#fff,stroke:#000,stroke-width:2px,color:#000
-    classDef process fill:#f0f0f0,stroke:#000,stroke-width:2px,color:#000
-    classDef component fill:#fff,stroke:#000,stroke-width:1px,stroke-dasharray: 5 5,color:#000
-    classDef external fill:#e0e0e0,stroke:#000,stroke-width:2px,color:#000
+    PDFRender --> YOLO
+    YOLO -->|Text Regions| OCR
+    YOLO -->|Tables| TableExt
+    YOLO -->|Images| Filter
+    
+    Filter -->|Valid| Bucket
+    Filter -->|Valid| Prompt
+    OCR --> Chunker --> Prompt
+    TableExt --> Prompt
+
+    %% Semantic Enrichment
+    Prompt --> Scheduler
+    Scheduler --> KeyPool --> MLLM
+    MLLM --> Parser
+    Parser --> EmbedModel
+    EmbedModel --> Qdrant
+    Bucket -.->|Image URLs| Qdrant
+
+    %% Retrieval Pipeline
+    RetrieveEP --> EmbedModel
+    EmbedModel --> VectorSearch
+    VectorSearch -->|Chunks + Metadata| ContextManage
+    
+    ContextManage -->|Filtered Context| RAGAgent
+    RAGAgent -->|Answer + Citations| UI
+
+    %% Styling
+    classDef layer fill:#f9f9f9,stroke:#333,stroke-width:2px;
+    classDef process fill:#e1f5fe,stroke:#01579b,stroke-width:1px;
+    classDef storage fill:#fff3e0,stroke:#e65100,stroke-width:1px;
+    classDef component fill:#ffffff,stroke:#333,stroke-width:1px,stroke-dasharray: 5 5;
+
+    class Client,Gateway,Core,Intelligence,Persistence,GenFlow layer
+    class IngestEP,RetrieveEP,Auth,Hasher,MimeCheck,PDFRender,YOLO,OCR,TableExt,Chunker,Prompt,Scheduler,KeyPool,MLLM,Parser,EmbedModel,VectorSearch,ContextManage,RAGAgent,Filter process
+    class Bucket,Qdrant storage
+    class User,UI,UploadHook,QueryHook component
