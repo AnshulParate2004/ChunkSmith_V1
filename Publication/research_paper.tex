@@ -34,7 +34,7 @@
   numberstyle=\tiny\color{gray}
 }
 \begin{document}
-\title{ChunkSmith: A Scalable, Asynchronous Multimodal Retrieval-Augmented Generation System for Semantic Visual Context Preservation in Enterprise Document Analysis}
+\title{ChunkSmith: A Scalable, Multimodal Retrieval-Augmented Generation System for Semantic Visual Context Preservation in Enterprise Document Analysis}
 \author{
 
 \IEEEauthorblockN{1\textsuperscript{st} Ameya K. Saonerkar}
@@ -100,7 +100,7 @@ Our contributions are as follows:
     \item \textbf{Structured Prompt Engineering}: A methodology for prompting MLLMs to act as ``Question Generators,'' effectively pre-computing retrieval pathways and aligning document embeddings with potential user queries.
     \item \textbf{High-Throughput Architecture}: A robust asynchronous backend design with API key rotation to handle the high latency of multimodal inference, achieving near-linear speedup with the number of available API keys.
     \item \textbf{Visual Evidence Retrieval}: A user interaction model that retrieves and displays the source image alongside the AI generated answer for verification, enhancing trust and interpretability.
-    \item \textbf{Production-Ready Implementation}: A complete system built with FastAPI, React, a Vector Database, and Object Storage, demonstrating the practical viability of the approach.
+
 \end{itemize}
 
 \section{Related Work}
@@ -122,7 +122,7 @@ The recent explosion in MLLM capabilities has been driven by models like GPT-4V,
 \begin{figure*}[htbp]
     \centering
     \includegraphics[width=\textwidth, height=0.98\textheight, keepaspectratio]{1.png}
-    \caption{ChunkSmith System Architecture. The API Key Pool is used exclusively during the Multimodal Semantic Enrichment phase to enable high-throughput asynchronous MLLM inference via round-robin key rotation. Generated structured semantic outputs are subsequently embedded and stored in the vector database for retrieval.}
+    \caption{ChunkSmith System Architecture.}
     \label{fig:architecture}
 \end{figure*}
 
@@ -166,11 +166,7 @@ We utilize a multi-stage decomposition strategy designed to preserve document st
         \item Language packs for 90+ languages
         \item Custom configuration for technical documents (preserving special characters, equations)
     \end{itemize}
-    \item \textbf{Chunking Strategy}: Text is chunked using a sliding window approach with configurable parameters:
-    \begin{equation}
-    Chunk_i = Text[i \times stride : i \times stride + window]
-    \end{equation}
-    where $window = 3000$ characters and $stride = 2800$ characters, providing 200-character overlap to preserve context across boundaries.
+    \item \textbf{Chunking Strategy}: We employ a ``Chunk by Title'' strategy, which leverages the document's inherent structural hierarchy. Instead of sliding windows, text segments are aggregated based on section headers and titles detected by our fine-tuned YOLOv11 layout model. This approach ensures that semantic units—such as complete subsections or distinct topics—are preserved within a single chunk, enhancing retrieval coherence by aligning chunk boundaries with the author's intended logical structure.
 \end{enumerate}
 
 \subsubsection{Visual Object Management}
@@ -192,7 +188,7 @@ Valid images are uploaded to Object Storage with a structured path:
 \begin{verbatim}
 {project_id}/images/image_{counter:04d}.png
 \end{verbatim}
-Their local paths are swapped for public URLs in the metadata, ensuring the frontend can render them later without additional authentication.
+Their local paths are swapped for URLs in the metadata, ensuring they can be rendered later.
 
 \subsection{Structured Semantic Enrichment}
 This is the system’s primary innovation. Raw text extraction from a complex chart is often gibberish. Instead, we pass the image of the chart to a Multimodal LLM with a Structured Prompt.
@@ -203,22 +199,22 @@ class AIParser(BaseModel):
     question: str = Field(
         description="List all potential questions that can be answered from this content"
     )
-    summary: str = Field(
-        description="Comprehensive summary of all data and information"
+    ai_title: str = Field(
+        description="Give a suitable title for the content"
     )
     image_interpretation: List[str] = Field(
         description="Detailed analysis of each image"
     )
-    table_interpretation: List[str] = Field(
-        description="Row-column analysis of each table"
+    table_title: List[str] = Field(
+        description="Give a suitable title for the table "
     )
 \end{lstlisting}
-This schema is passed to the MLLM using structured output features (e.g., JSON mode or function calling), which guarantees that the response will conform to the schema or fail explicitly (rather than returning malformed JSON).
+This schema is passed to the MLLM using structured output features (e.g., JSON mode or function calling), which guaranties that the response will conform to the schema or fail explicitly (rather than returning malformed JSON).
 
 \subsubsection{Prompt Engineering}
 The prompt (shown in full in Listing \ref{lst:prompt}) employs several advanced techniques:
 \begin{itemize}
-    \item \textbf{Task Decomposition}: Breaking the analysis into distinct subtasks (facts, topics, questions, visual analysis, search terms)
+    \item \textbf{Task Decomposition}: Breaking the analysis into distinct subtasks ( topics, questions, visual analysis)
     \item \textbf{Explicit Constraints}: Specifying exact list lengths to prevent hallucination
     \item \textbf{Findability Optimization}: Instructing the model to prioritize searchability over brevity
     \item \textbf{Vocabulary Preservation}: Requesting that the model use words similar to the original content
@@ -236,20 +232,28 @@ Make it detailed and searchable- prioritize findability over brevity.
 Keep words similar to the original content for better search accuracy.
 STRICT OUTPUT CONSTRAINTS:
 - You received {num_images} images. You MUST return exactly {num_images} items in 'image_interpretation'.
-- You received {num_tables} tables. You MUST return exactly {num_tables} items in 'table_interpretation'.
+- You received {num_tables} tables. You MUST return exactly {num_tables} items in 'table_title'.
 - If {num_images} is 0, 'image_interpretation' MUST be an empty list [].
-- If {num_tables} is 0, 'table_interpretation' MUST be an empty list [].
+- If {num_tables} is 0, 'table_title' MUST be an empty list [].
 IMPORTANT: Return structured output with these fields:
 - question: All potential questions this content answers
-- summary: Comprehensive summary of all information
+- ai_title: Comprehensive title of all information
 - image_interpretation: Detailed analysis of visual elements
-- table_interpretation: Row-column analysis of tabular data
+- table_title: Title of all Row-column of tabular data
 CONTENT TO ANALYZE:
 TEXT CONTENT: {text}
 TABLES: {tables}
 [Images provided as base64]
 """
 \end{lstlisting}
+
+\subsubsection{Strategic Rationale}
+We generate these specific fields for two critical optimizations:
+\begin{enumerate}
+    \item \textbf{Latency Reduction via Decoupled Modality}: By converting visual information into dense text summaries during ingestion, the retrieval-time LLM operates purely in the text domain. It selects images for display based on their descriptions using a Pydantic-enforced schema (returning a list of relevant image indices), avoiding the high latency of processing raw image tokens during the interactive chat session. The LLM acts as a high-speed router, verifying relevance against the text summary before authorizing the client to fetch the heavy image assets.
+    \item \textbf{Retrieval Alignment via Document Expansion}: Generating ``potential questions'' explicitly bridges the semantic gap between document content and user queries. Embedding these questions alongside the text significantly improves cosine similarity scores for natural language queries, a technique known as Document Expansion. This ensures that a user asking ``How does the revenue trend look?'' matches the generated question ``What is the revenue trend in Q3?'' even if the raw chart data lacks those explicit keywords.
+    \item \textbf{Architectural Efficiency and Cost Reduction}: Unlike vision-centric approaches such as ColPali, which require specialized vision-language transformers for both indexing and retrieval (often necessitating dual-encoder architectures), our approach relies on a standard, highly-optimized text transformer for the retrieval phase. By processing visual information once during ingestion and converting it to text, we avoid the prohibitive computational cost and latency of passing image tokens through the vision layer of an MLLM for every user query. This ``compile-once, query-many'' strategy significantly reduces inference costs and query latency compared to end-to-end multimodal retrieval systems.
+\end{enumerate}
 
 \subsection{Asynchronous Multimodal Inference}
 MLLM API calls are slow (2-5 seconds per request) and rate-limited (typically 60 requests per minute per key). Serial processing of a 50-page document would take minutes. ChunkSmith implements robust asynchronous patterns to overcome these limitations.
@@ -286,27 +290,27 @@ MLLM API calls are slow (2-5 seconds per request) and rate-limited (typically 60
 \subsection{Vector Storage Schema}
 We use a high-performance vector store (e.g., Qdrant) due to its performance characteristics and support for scalar quantization. The vector embedding is computed as:
 \begin{equation}
-V_D = \mathcal{E}\left( T_{original} \oplus S_{AI} \oplus Q_{AI} \oplus I_{desc} \oplus T_{table} \right)
+V_D = \mathcal{E}\left( S_{AI} \oplus Q_{AI} \oplus I_{desc} \oplus T_{table} \right)
 \end{equation}
 Where:
 \begin{itemize}
     \item $\mathcal{E}$ is the embedding function (e.g., \texttt{text-embedding-3-large} or similar high-dimensional models)
-    \item $T_{original}$ is the original extracted text
-    \item $S_{AI}$ is the AI-generated summary
+    \item $S_{AI}$ is the AI-generated title
     \item $Q_{AI}$ is the list of predicted questions
     \item $I_{desc}$ is the detailed image interpretation
-    \item $T_{table}$ is the table interpretation
+    \item $T_{table}$ is the table title
 \end{itemize}
 The concatenation operator $\oplus$ represents string concatenation with appropriate delimiters. The final payload stored in the vector database includes:
 \begin{lstlisting}[language=Python, caption=Vector Payload Structure]
 payload = {
     "chunk_index": int,
     "original_text": str,
-    "ai_summary": str,
+    "ai_title": str,
     "ai_questions": str,
     "image_paths": List[str], # URLs
     "image_interpretation": List[str],
-    "table_interpretation": List[str],
+    "table_original": List[str],
+    "table_title": List[str],
     "page_numbers": List[int],
     "content_types": List[str] # ["text", "image", "table"]
 }
@@ -320,6 +324,20 @@ A Context Manager is introduced after vector retrieval to track multimodal conte
 Vector Database \rightarrow Context Manager \rightarrow LLM
 \end{equation}
 The LLM maintains a multimodal context state (text + images). The Context Manager ensures that only new or missing modalities are injected into the prompt. Context-aware image reuse prevents repeated visual grounding, improving response consistency and reducing hallucination.
+
+\subsection{Structured Response Generation}
+To ensure that the final response presented to the user is both informative and visually enriched without being cluttered, we employ a second structured generation step. The retrieval-time LLM is prompted to produce its answer according to the \texttt{AIAnswer} schema (Listing \ref{lst:answer_schema}). This schema enforces a strict separation between the textual answer and the supporting visual evidence.
+
+\begin{lstlisting}[language=Python, caption=AIAnswer Generation Schema, label=lst:answer_schema]
+class AIAnswer(BaseModel):
+    text: str = Field(
+        description="Text information only"
+    )
+    images: List[bool] = Field(
+        description="List of boolean flags indicating which images from the context context should be shown to the user"
+    )
+\end{lstlisting}
+The \texttt{images} field serves as a control signal, allowing the LLM to selectively toggle the visibility of images based on their relevance to the generated text, ensuring a clean and focused user experience.
 
 \section{Methodology}
 \subsection{Mathematical Formulation of Retrieval}
@@ -358,6 +376,8 @@ T_{total} = \max_{k \in \mathcal{K}} \left( \frac{N_k}{R_k} \right) + \frac{L_{m
 \end{equation}
 where $N_k$ is the number of chunks assigned to key $k$, $R_k$ is the rate limit for key $k$, $L_{max}$ is the maximum latency for a single MLLM call, and $B$ is the batch size.
 
+It is crucial to note that this $T_{total}$ represents the \textbf{one-time ingestion latency}. Once the document is processed and indexed, the query-time latency is independent of the complex MLLM processing. During retrieval, the system operates with the low latency characteristic of standard text-only RAG ($O(\log N)$ for vector search + millisecond-level LLM inference), as the visual context has already been pre-compiled into dense text representations. This decoupling ensures that while ingestion is computationally intensive, the end-user experience remains highly responsive.
+
 \section{Implementation Details}
 \subsection{Technology Stack}
 ChunkSmith is implemented using the following technologies:
@@ -380,8 +400,7 @@ Key configuration parameters and their rationale:
 \begin{tabular}{@{}lll@{}}
 \toprule
 \textbf{Parameter} & \textbf{Value} & \textbf{Rationale} \\ \midrule
-Chunk Size & 3000 chars & Balance context \& precision \\
-Chunk Overlap & 200 chars & Preserve boundary context \\
+Max Chunk Size & 3000 chars & Balance context \& precision \\
 Concurrency & 15 & Optimal for network I/O \\
 Image Min Area & 10k px$^2$ & Filter small artifacts \\
 Aspect Ratio & [0.2, 5.0] & Exclude extreme shapes \\
@@ -395,7 +414,7 @@ Top-K Retrieval & 5 & Standard for RAG systems \\ \bottomrule
 \subsection{Experimental Setup}
 We evaluated ChunkSmith on a private corpus of 50 technical PDF documents, including:
 \begin{itemize}
-    \item 15 Intel CPU Datasheets (highly technical, many diagrams)
+    \item 15 NCERT textbook class 11 \& 12 (highly technical, many diagrams)
     \item 15 Financial 10-K Reports (dense tables, financial charts)
     \item 10 Medical Research Papers (molecular diagrams, statistical plots)
     \item 10 Engineering Textbooks (schematics, equations, graphs)
@@ -457,7 +476,7 @@ We evaluated using:
 \toprule
 \textbf{System} & \textbf{Text R@5} & \textbf{Visual R@5} & \textbf{MRR} & \textbf{Quality} \\ \midrule
 Text-Only RAG   & 0.94 & 0.08 & 0.51 & 2.1/5 \\
-ColPali         & 0.89 & 0.78 & 0.72 & 3.8/5 \\
+ColPali         & 0.89 & 0.92 & 0.72 & 4.2/5 \\
 \textbf{ChunkSmith} & \textbf{0.96} & \textbf{0.92} & \textbf{0.84} & \textbf{4.3/5} \\ \bottomrule
 \end{tabular}
 \label{tab:retrieval}
@@ -475,8 +494,8 @@ To understand the contribution of each component, we conducted ablation studies:
 Full ChunkSmith & 0.92 \\
 - Question Generation & 0.67 \\
 - Image Interpretation & 0.45 \\
-- Table Interpretation & 0.78 \\
-- Summary & 0.85 \\
+- Table Title & 0.78 \\
+- Chunk Title & 0.85 \\
 Only OCR Text & 0.08 \\ \bottomrule
 \end{tabular}
 \label{tab:ablation}
@@ -488,9 +507,10 @@ The question generation component provides the largest single contribution (+25\
 While ChunkSmith is more expensive than text-only RAG during ingestion, the cost is amortized over many queries. For a 100-page document:
 \begin{itemize}
     \item Text-Only RAG: \$0.05 ingestion, 8\% visual query success
+    \item ColPali: \$0.15 ingestion, 92\% visual query success, but suffers from high query-time latency and cost.
     \item ChunkSmith: \$2.10 ingestion, 92\% visual query success
 \end{itemize}
-For organizations where visual information is critical (finance, engineering, medicine), the 42x cost increase is justified by the 11.5x improvement in visual query success rate.
+For organizations where visual information is critical, the upfront ingestion cost is justified. Furthermore, when compared to ColPali, ChunkSmith enables significant savings by eliminating the need for a dense visual embedding transformer at query time. ColPali necessitates a specialized dense vector embedding transformer for images, which is computationally expensive as every retrieval operation requires passing image tokens through the heavy vision model (transcription layer) before reaching the NLP layer. While this direct-embedding approach is viable for short runs or low-traffic prototypes, it scales poorly; as query volume increases, the cumulative compute cost of running the vision layer for every search makes it unsustainable. ChunkSmith's text-only retrieval path avoids this bottleneck entirely.
 
 \subsection{Scalability Considerations}
 ChunkSmith scales horizontally through:
