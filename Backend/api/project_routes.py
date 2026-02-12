@@ -126,26 +126,35 @@ async def get_project_details(project_id: str, user = Depends(get_current_user))
             path=f"{project_id}/images/"
         )
         
+        # Filter out folder placeholders if any (items ending in / or empty names)
         pdf_files = []
         if isinstance(pdf_items, list):
             for item in pdf_items:
                 name = item.get('name') if isinstance(item, dict) else getattr(item, 'name', None)
-                metadata = item.get('metadata', {}) if isinstance(item, dict) else getattr(item, 'metadata', {})
-                created_at = item.get('created_at') if isinstance(item, dict) else getattr(item, 'created_at', None)
                 item_id = item.get('id') if isinstance(item, dict) else getattr(item, 'id', None)
                 
+                # Fetch metadata safely (can be explicitly None even if attribute exists)
+                metadata_raw = item.get('metadata') if isinstance(item, dict) else getattr(item, 'metadata', None)
+                metadata = metadata_raw or {}
+                
+                created_at = item.get('created_at') if isinstance(item, dict) else getattr(item, 'created_at', None)
+                
                 # Handle size which might be in metadata or direct attribute
-                size = metadata.get('size', 0)
+                size_raw = metadata.get('size', 0)
+                try:
+                    size_mb = round(float(size_raw) / (1024*1024), 2)
+                except (ValueError, TypeError):
+                    size_mb = 0.0
                 
                 if name and not name.startswith('.'):
                     pdf_files.append({
                         "filename": name, 
-                        "size_mb": round(float(size) / (1024*1024), 2),
+                        "size_mb": size_mb,
                         "created_at": created_at,
                         "id": item_id
                     })
 
-        # Filter out folder placeholders if any (items ending in / or empty names)
+        # Filter out folder placeholders if any
         # Supabase list sometimes returns the folder itself as an item?
         real_images = [img for img in (image_items or []) if (img.get('name') if isinstance(img, dict) else getattr(img, 'name', '')).lower().endswith(('.png', '.jpg', '.jpeg'))]
         image_count = len(real_images)
@@ -158,7 +167,8 @@ async def get_project_details(project_id: str, user = Depends(get_current_user))
            doc_count = vector_manager.get_project_document_count(project_id)
            has_vector_store = doc_count > 0
         except Exception as ve:
-           print(f"Vector count error: {ve}")
+           print(f"Vector count error for project {project_id}: {ve}")
+           # Don't crash if vector store is unreachable
         
         return {
             "success": True,
@@ -172,6 +182,8 @@ async def get_project_details(project_id: str, user = Depends(get_current_user))
         }
     
     except Exception as e:
+        import traceback
+        traceback.print_exc() # Print full stack trace to logs
         raise HTTPException(status_code=500, detail=str(e))
 
 

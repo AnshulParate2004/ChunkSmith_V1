@@ -68,7 +68,7 @@ export const HelpOverlay = ({ onClose }: HelpOverlayProps) => {
                 We support <span className="font-bold text-primary">{languages ? Object.keys(languages).length : '92'}</span> languages for OCR processing
               </p>
             </div>
-            
+
             <ScrollArea className="h-[60vh]">
               {loading && (
                 <div className="flex flex-col items-center justify-center py-12 space-y-4">
@@ -76,7 +76,7 @@ export const HelpOverlay = ({ onClose }: HelpOverlayProps) => {
                   <p className="text-muted-foreground">Loading languages...</p>
                 </div>
               )}
-              
+
               {languagesError && (
                 <div className="flex flex-col items-center justify-center py-12 space-y-4">
                   <div className="w-16 h-16 rounded-full bg-destructive/10 flex items-center justify-center">
@@ -87,7 +87,7 @@ export const HelpOverlay = ({ onClose }: HelpOverlayProps) => {
                   </p>
                 </div>
               )}
-              
+
               {languages && (
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 pb-4">
                   {Object.entries(languages).map(([name, code], index) => (
