@@ -65,8 +65,21 @@ class VectorStoreManager:
         
         # Ensure collection exists
         # gemini-embedding-001 has 3072 dimensions
+        # Ensure collection exists and has correct dimensions (3072 for text-embedding-3-large/004)
         try:
-            self.client.get_collection(collection_name)
+            collection_info = self.client.get_collection(collection_name)
+            
+            # Check for dimension mismatch (e.g. 768 vs 3072)
+            current_vector_config = collection_info.config.params.vectors
+            
+            # Handle directly accessed size attribute (common in single vector setup)
+            current_size = getattr(current_vector_config, 'size', None)
+            
+            if current_size and current_size != 3072:
+                # print(f"Format mismatch: Collection {collection_name} has dimension {current_size}, expected 3072. Recreating...")
+                self.client.delete_collection(collection_name)
+                raise Exception("Collection deleted due to dimension mismatch, triggering recreation")
+                
         except Exception:
              # logger.info(f"Creating new Qdrant collection: {collection_name}")
              self.client.create_collection(
