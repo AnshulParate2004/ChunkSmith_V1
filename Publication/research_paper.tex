@@ -4,6 +4,7 @@
 \usepackage{amsmath,amssymb,amsfonts}
 \usepackage{algorithmic}
 \usepackage{algorithm}
+\usepackage{float}
 \usepackage{graphicx}
 \usepackage{textcomp}
 \usepackage{xcolor}
@@ -114,15 +115,15 @@ We utilize a multi-stage decomposition strategy. First, pdf2image converts pages
 \subsubsection{Visual Object Management}
 Images detected within the PDF are not merely saved. A sophisticated filtering logic applies to eliminate noise:
 \begin{equation}
-Keep(I) = \begin{cases} 
-1 & \text{if } Area(I) > \theta_{area} \land Aspect(I) \in [\phi_{min}, \phi_{max}] \\
+\mathit{Keep}(I) = \begin{cases} 
+1 & A(I) > \theta_A \land \mathit{Aspect}(I) \in [\phi_{min}, \phi_{max}] \\
 0 & \text{otherwise}
 \end{cases}
 \end{equation}
-where $\theta_{area} = 10000$ pixels$^2$, $\phi_{min} = 0.2$, and $\phi_{max} = 5.0$. This filters out navigational elements (arrows, bullets), small icons/logos, decorative borders, and extremely narrow or wide artifacts.
+where $A(I)$ represents the area of image $I$, $\theta_A = 10000 \mathrm{pixels}^2$, $\phi_{min} = 0.2$, and $\phi_{max} = 5.0$. This filters out navigational elements (arrows, bullets), small icons/logos, decorative borders, and extremely narrow or wide artifacts.
 Valid images are uploaded to Object Storage with a structured path:
 \begin{verbatim}
-{project_id}/images/image_{counter:04d}.png
+{proj_id}/images/image_{counter:04d}.png
 \end{verbatim}
 Their local paths are swapped for URLs in the metadata, ensuring they can be rendered later.
 
@@ -200,28 +201,22 @@ MLLM API calls are slow (2-5 seconds per request) and rate-limited (typically 60
     \item \textbf{Concurrency Control}: We leverage Python’s \texttt{asyncio.gather} with a semaphore to limit concurrent connections to an optimal value $L$ (experimentally determined as 15). The algorithm is shown in Algorithm \ref{alg:async}. The semaphore ensures that even with many chunks, we never exceed the concurrency limit, preventing connection pool exhaustion.
 \end{enumerate}
 
-\begin{algorithm}
+\begin{algorithm}[H]
 \caption{Async Chunk Processing with Key Rotation}
 \label{alg:async}
 \begin{algorithmic}[1]
-\REQUIRE $Chunks$, $ApiKeys$, $ConcurrencyLimit$
+\REQUIRE $Chunks$, $ApiKeys$, $Limit$
 \STATE $Tasks \leftarrow []$
-\STATE $Semaphore \leftarrow CreateSemaphore(ConcurrencyLimit)$
+\STATE $Sem \leftarrow InitSem(Limit)$
 \FOR{$i \leftarrow 0$ \TO $Length(Chunks) - 1$}
     \STATE $Key \leftarrow ApiKeys[i \pmod{Length(ApiKeys)}]$
-    \STATE $Task \leftarrow \text{AsyncCall}(MLLM, Chunks[i], Key, Semaphore)$
+    \STATE $Task \leftarrow \text{AsyncCall}(MLLM, Chunks[i], Key, Sem)$
     \STATE $Tasks.Append(Task)$
 \ENDFOR
 \STATE $Results \leftarrow \text{Await}(Tasks)$
 \RETURN $Results$
 \end{algorithmic}
 \end{algorithm}
-
-\subsection{Vector Storage Schema}
-We use a high-performance vector store (e.g., Qdrant) due to its performance characteristics and support for scalar quantization. The vector embedding is computed as:
-\begin{equation}
-V_D = \mathcal{E}\left( S_{AI} \oplus Q_{AI} \oplus I_{desc} \oplus T_{table} \right)
-\end{equation}
 Where:
 \begin{itemize}
     \item $\mathcal{E}$ is the embedding function (e.g., \texttt{text-embedding-3-large} or similar high-dimensional models)
@@ -230,6 +225,12 @@ Where:
     \item $I_{desc}$ is the detailed image interpretation
     \item $T_{table}$ is the table title
 \end{itemize}
+\subsection{Vector Storage Schema}
+We use a high-performance vector store (e.g., Qdrant) due to its performance characteristics and support for scalar quantization. The vector embedding is computed as:
+\begin{equation}
+V_D = \mathcal{E}\left( S_{AI} \oplus Q_{AI} \oplus I_{desc} \oplus T_{table} \right)
+\end{equation}
+
 The concatenation operator $\oplus$ represents string concatenation with appropriate delimiters. The final payload stored in the vector database includes:
 \begin{lstlisting}[language=Python, caption=Vector Payload Structure]
 payload = {
@@ -299,7 +300,7 @@ T_{total} = \max_{k \in \mathcal{K}} \left( \frac{N_k}{R_k} \right) + \frac{L_{m
 \end{equation}
 where $N_k$ is the number of chunks assigned to key $k$, $R_k$ is the rate limit for key $k$, $L_{max}$ is the maximum latency for a single MLLM call, and $B$ is the batch size.
 
-It is crucial to note that this $T_{total}$ represents the \textbf{one-time ingestion latency}. Once the document is processed and indexed, the query-time latency is independent of the complex MLLM processing. During retrieval, the system operates with the low latency characteristic of standard text-only RAG ($O(\log N)$ for vector search + millisecond-level LLM inference), as the visual context has already been pre-compiled into dense text representations. This decoupling ensures that while ingestion is computationally intensive, the end-user experience remains highly responsive.
+Note that $T_{total}$ is a \textbf{one-time ingestion latency}. Post-indexing, retrieval bypasses MLLM processing, relying on standard text-only RAG ($O(\log N)$ vector search + fast inference) since visual context is pre-compiled. This decoupling ensures a highly responsive end-user experience despite intensive ingestion.
 
 \section{Implementation Details}
 \subsection{Technology Stack}
@@ -351,6 +352,8 @@ ChunkSmith represents a significant advancement in Multimodal RAG systems. By tr
 
 \bibliographystyle{IEEEtran}
 \begin{thebibliography}{00}
+\footnotesize
+\setlength{\itemsep}{0pt}
 \bibitem{lewis2020retrieval} P. Lewis, et al., ``Retrieval-Augmented Generation for Knowledge-Intensive NLP Tasks,'' in \textit{Proc. NeurIPS}, 2020.
 \bibitem{karpukhin2020dense} V. Karpukhin, et al., ``Dense Passage Retrieval for Open-Domain Question Answering,'' in \textit{Proc. EMNLP}, 2020.
 \bibitem{abootorabi2025ask} M. M. Abootorabi, et al., ``Ask in Any Modality: A Comprehensive Survey on Multimodal Retrieval-Augmented Generation,'' \textit{arXiv preprint arXiv:2502.08826}, 2025.
@@ -363,28 +366,28 @@ ChunkSmith represents a significant advancement in Multimodal RAG systems. By tr
 \bibitem{vaswani2017attention} A. Vaswani, et al., ``Attention is all you need,'' in \textit{Advances in neural information processing systems}, 2017.
 \bibitem{devlin2018bert} J. Devlin, et al., ``BERT: Pre-training of Deep Bidirectional Transformers for Language Understanding,'' in \textit{Proc. NAACL}, 2019.
 \bibitem{gao2022precise} L. Gao, et al., ``Precise Zero-Shot Dense Retrieval without Relevance Labels,'' in \textit{Proc. ACL}, 2023.
-\bibitem{chen2022murag} J. Chen, et al., ``MuRAG: Multimodal Retrieval-Augmented Generator,'' \textit{arXiv preprint}, 2022.
+\bibitem{chen2022murag} J. Chen, et al., ``MuRAG: Multimodal Retrieval-Augmented Generator,'' \textit{arXiv preprint arXiv:2210.02928}, 2022.
 \bibitem{yasunaga2023retrieval} M. Yasunaga, et al., ``Retrieval-Augmented Multimodal Language Modeling,'' in \textit{Proc. ICML}, 2023.
 \bibitem{liu2023visual} H. Liu, et al., ``Visual Instruction Tuning,'' in \textit{Proc. NeurIPS}, 2023.
 \bibitem{hybridrag2025}
-``Hybrid RAG-empowered Multi-modal LLM for Secure Data Management,'' \textit{arXiv preprint}, 2025.
+``Hybrid RAG-empowered Multi-modal LLM for Secure Data Management,'' \textit{arXiv preprint arXiv:2407.00978}, 2024.
 \bibitem{msier2025}
-``MSIER: Textual Effects on Multimodal In-Context Retrieval,'' \textit{arXiv preprint}, 2025.
+``MSIER: Textual Effects on Multimodal In-Context Retrieval,'' \textit{arXiv preprint arXiv:2404.12866}, 2024.
 \bibitem{rule2025}
-``RULE: Reliable Multimodal RAG for Medical VQA Factuality,'' \textit{arXiv preprint}, 2025.
+P. Xia et al., ``RULE: Reliable Multimodal RAG for Factuality in Medical Vision Language Models,'' \textit{arXiv preprint arXiv:2407.05131}, 2024.
 \bibitem{m2raap2025}
-``M2-RAAP: Multi-Modal Recipe for Zero-shot Video-Text Retrieval,'' \textit{arXiv preprint}, 2025.
+``M2-RAAP: A Multi-Modal Recipe for Advancing Adaptation-based Pre-training,'' \textit{arXiv preprint arXiv:2401.17688}, 2024.
 \bibitem{ramm2025}
-``RAMM: Retrieval-Augmented Biomedical VQA,'' \textit{arXiv preprint}, 2025.
-\bibitem{cornellius2025}
-CornelliusYW, ``Multimodal RAG with CLIP/Whisper/Qwen-VL,'' GitHub repository, 2025. [Online]. Available: \url{https://github.com/CornelliusYW/Multimodal-RAG}
-\bibitem{ahmedal2024}
-AhmedAl93, ``Agentic Multimodal RAG,'' GitHub repository, 2024. [Online]. Available: \url{https://github.com/AhmedAl93/Agentic-Multimodal-RAG}
-\bibitem{azure2024}
-Azure-Samples, ``Azure Multimodal RAG with Code Execution,'' GitHub repository, 2024. [Online]. Available: \url{https://github.com/Azure-Samples/multimodal-rag-code-execution}
-\bibitem{aishwaryanr2025}
-aishwaryanr, ``Most Impactful RAG Papers Table,'' GitHub repository, 2025. [Online]. Available: \url{https://github.com/aishwaryanr/RAG_Papers}
-\bibitem{genesis2025}
-``Top 25 Types of RAG,'' Genesis Human Experience Blog, 2025. [Online]. Available: \url{https://genesishumanexperience.com}
+``RAMM: Retrieval-Augmented Biomedical VQA,'' \textit{arXiv preprint arXiv:2303.00534}, 2023.
+\bibitem{alzheimer2024}
+Lai et al., ``AlzheimerRAG: Multimodal Retrieval Augmented Generation for PubMed articles,'' \textit{arXiv preprint arXiv:2412.16701}, 2024.
+\bibitem{chen2025unified}
+Chen et al., ``Multimodal Retrieval-Augmented Generation: Unified Information Processing Across Text, Image, Table, and Video,'' in \textit{Proc. MAGMaR}, 2025.
+\bibitem{marag2025}
+Nguyen, T., Chin, P., and Tai, Y.-W., ``MA-RAG: Multi-Agent Retrieval-Augmented Generation via Collaborative Chain-of-Thought Reasoning,'' \textit{arXiv preprint arXiv:2505.20096}, 2025.
+\bibitem{mmedrag2025}
+P. Xia et al., ``MMed-RAG: Versatile Multimodal RAG System for Medical Vision-Language Models,'' \textit{OpenReview}, 2025.
+\bibitem{wikillava2024}
+Caffagni et al., ``Wiki-LLaVA: Hierarchical Retrieval-Augmented Generation for Multimodal LLMs,'' \textit{arXiv preprint arXiv:2404.15406}, 2024.
 \end{thebibliography}
 \end{document}

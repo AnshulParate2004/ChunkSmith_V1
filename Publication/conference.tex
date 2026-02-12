@@ -1,581 +1,288 @@
 \documentclass[conference]{IEEEtran}
 \IEEEoverridecommandlockouts
+% The preceding line is only needed to identify funding in the first footnote. If that is unneeded, please comment it out.
 \usepackage{cite}
 \usepackage{amsmath,amssymb,amsfonts}
 \usepackage{algorithmic}
-\usepackage{algorithm}
 \usepackage{graphicx}
 \usepackage{textcomp}
 \usepackage{xcolor}
-\usepackage{listings}
-\usepackage{hyperref}
-\hypersetup{
-    colorlinks=true,
-    linkcolor=black,
-    filecolor=black,      
-    urlcolor=black,
-    citecolor=black,
-}
-\usepackage{booktabs}
-\usepackage{multirow}
-\usepackage{subcaption}
-
 \def\BibTeX{{\rm B\kern-.05em{\sc i\kern-.025em b}\kern-.08em
     T\kern-.1667em\lower.7ex\hbox{E}\kern-.125emX}}
-\lstset{
-  basicstyle=\ttfamily\scriptsize,
-  breaklines=true,
-  frame=single,
-  captionpos=b,
-  keywordstyle=\color{blue},
-  stringstyle=\color{red},
-  showstringspaces=false,
-  numbers=none,
-  numberstyle=\tiny\color{gray}
-}
 \begin{document}
-\title{ChunkSmith: A Scalable, Multimodal Retrieval-Augmented Generation System for Semantic Visual Context Preservation in Enterprise Document Analysis}
-\author{
 
-\IEEEauthorblockN{1\textsuperscript{st} Ameya K. Saonerkar}
-\IEEEauthorblockA{\textit{Department of Electrical } \\
-\textit{Engineering} \\
-\textit{Ramdeobaba University} \\
-Nagpur, India \\
-saonerkarak@rknec.edu}
-\and
-\IEEEauthorblockN{2\textsuperscript{nd} Atharva Tembhurnikar}
-\IEEEauthorblockA{\textit{Department of Computer Science and} \\
-\textit{Engineering (AIML)} \\
-\textit{Ramdeobaba University} \\
-Nagpur, India \\
-tatharva0906@gmail.com}
-\and
-\IEEEauthorblockN{3\textsuperscript{rd}Anshul  Parate}
-\IEEEauthorblockA{\textit{Department of Computer Science and} \\
-\textit{Engineering (AIML)} \\
-\textit{Ramdeobaba University} \\
-Nagpur, India \\
-anshulnparateweb@gmail.com}
-
-
+\title{Conference Paper Title*\\
+{\footnotesize \textsuperscript{*}Note: Sub-titles are not captured in Xplore and
+should not be used}
+\thanks{Identify applicable funding agency here. If none, delete this.}
 }
+
+\author{\IEEEauthorblockN{1\textsuperscript{st} Given Name Surname}
+\IEEEauthorblockA{\textit{dept. name of organization (of Aff.)} \\
+\textit{name of organization (of Aff.)}\\
+City, Country \\
+email address or ORCID}
+\and
+\IEEEauthorblockN{2\textsuperscript{nd} Given Name Surname}
+\IEEEauthorblockA{\textit{dept. name of organization (of Aff.)} \\
+\textit{name of organization (of Aff.)}\\
+City, Country \\
+email address or ORCID}
+\and
+\IEEEauthorblockN{3\textsuperscript{rd} Given Name Surname}
+\IEEEauthorblockA{\textit{dept. name of organization (of Aff.)} \\
+\textit{name of organization (of Aff.)}\\
+City, Country \\
+email address or ORCID}
+\and
+\IEEEauthorblockN{4\textsuperscript{th} Given Name Surname}
+\IEEEauthorblockA{\textit{dept. name of organization (of Aff.)} \\
+\textit{name of organization (of Aff.)}\\
+City, Country \\
+email address or ORCID}
+\and
+\IEEEauthorblockN{5\textsuperscript{th} Given Name Surname}
+\IEEEauthorblockA{\textit{dept. name of organization (of Aff.)} \\
+\textit{name of organization (of Aff.)}\\
+City, Country \\
+email address or ORCID}
+\and
+\IEEEauthorblockN{6\textsuperscript{th} Given Name Surname}
+\IEEEauthorblockA{\textit{dept. name of organization (of Aff.)} \\
+\textit{name of organization (of Aff.)}\\
+City, Country \\
+email address or ORCID}
+}
+
 \maketitle
 
 \begin{abstract}
-The paradigm of Retrieval-Augmented Generation (RAG) has fundamentally shifted the capabilities of Large Language Models (LLMs), allowing them to answer queries grounded in private, external data. However, a significant ``Modality Gap'' persists in enterprise definitions of RAG. Real world documents---ranging from financial ledgers and scientific manuscripts to engineering schematics---encode a substantial portion of their specific knowledge in visual formats (charts, tables, diagrams). Traditional RAG pipelines, which predominantly rely on OCR-based text matching, strip away this visual context, reducing rich multimodal documents to flattened strings. This leads to hallucinations when models attempt to reason about visual trends or comparative data in tables. To address this critical deficiency, we present ChunkSmith, a production grade Multimodal RAG system engineered for high-fidelity visual context preservation. ChunkSmith introduces a novel Schema First content processing architecture that treats images and tables not as auxiliary metadata, but as distinct, first-class semantic entities. By leveraging state-of-the-art Multimodal LLMs and a purposely designed Structured Semantic Enrichment strategy, the system generates dense vector representations that encode deep visual understanding and ``predicted question'' affordances. We further detail the system's distributed backend, which employs an asynchronous Round-Robin Key Rotation algorithm to effectively bypass provider rate limits, achieving a 4.6x improvement in ingestion throughput over serial baselines. Extensive qualitative and quantitative evaluations demonstrate ChunkSmith's superior ability to handle complex visual reasoning tasks while maintaining scalable performance metrics suitable for large corpora.
+This document is a model and instructions for \LaTeX.
+This and the IEEEtran.cls file define the components of your paper [title, text, heads, etc.]. *CRITICAL: Do Not Use Symbols, Special Characters, Footnotes, 
+or Math in Paper Title or Abstract.
 \end{abstract}
 
 \begin{IEEEkeywords}
-Multimodal RAG, Large Language Models, Document Analysis, Vector Search, Knowledge Retrieval, Asynchronous Processing, Semantic Enrichment, Visual Question Answering
+component, formatting, style, styling, insert
 \end{IEEEkeywords}
 
 \section{Introduction}
-\subsection{The Evolution of Retrieval Systems}
-The quest for intelligent information retrieval has evolved through several distinct epochs. Initial systems relied on lexical matching algorithms like TF-IDF \cite{salton1988term} and BM25 \cite{robertson2009probabilistic}, which were effective for keyword search but lacked semantic understanding. These systems operated on the principle of term frequency analysis, treating documents as bags of words without capturing contextual meaning or relationships between concepts. The advent of Transformer-based models \cite{vaswani2017attention} brought about Dense Passage Retrieval (DPR) \cite{karpukhin2020dense}, enabling retrieval based on conceptual similarity rather than exact keyword matches. This represented a paradigm shift: instead of matching surface-level tokens, systems could now identify semantically related passages even when they used entirely different vocabulary. The introduction of BERT \cite{devlin2018bert} and subsequent models demonstrated that pre-trained language representations could capture nuanced semantic relationships, paving the way for neural information retrieval. Most recently, Retrieval-Augmented Generation (RAG) \cite{lewis2020retrieval} has emerged as the dominant framework for extending the knowledge boundaries of LLMs. By retrieving relevant context from a vector database and injecting it into the model's prompt, RAG mitigates the twin problems of hallucination (generating factually incorrect information) and knowledge cutoff (inability to access recent data). This architecture has proven particularly valuable in enterprise settings where proprietary data cannot be included in model training.
+This document is a model and instructions for \LaTeX.
+Please observe the conference page limits. 
 
-\subsection{The Modality Gap: A Critical Limitation}
-Despite these advancements, standard RAG implementations remain heavily text-centric. In professional settings, arguably the most valuable information is often non-textual. Consider the following scenarios:
+\section{Ease of Use}
+
+\subsection{Maintaining the Integrity of the Specifications}
+
+The IEEEtran class file is used to format your paper and style the text. All margins, 
+column widths, line spaces, and text fonts are prescribed; please do not 
+alter them. You may note peculiarities. For example, the head margin
+measures proportionately more than is customary. This measurement 
+and others are deliberate, using specifications that anticipate your paper 
+as one part of the entire proceedings, and not as an independent document. 
+Please do not revise any of the current designations.
+
+\section{Prepare Your Paper Before Styling}
+Before you begin to format your paper, first write and save the content as a 
+separate text file. Complete all content and organizational editing before 
+formatting. Please note sections \ref{AA}--\ref{SCM} below for more information on 
+proofreading, spelling and grammar.
+
+Keep your text and graphic files separate until after the text has been 
+formatted and styled. Do not number text heads---{\LaTeX} will do that 
+for you.
+
+\subsection{Abbreviations and Acronyms}\label{AA}
+Define abbreviations and acronyms the first time they are used in the text, 
+even after they have been defined in the abstract. Abbreviations such as 
+IEEE, SI, MKS, CGS, ac, dc, and rms do not have to be defined. Do not use 
+abbreviations in the title or heads unless they are unavoidable.
+
+\subsection{Units}
 \begin{itemize}
-    \item A financial analyst querying quarterly revenue trends encoded in a multi-series line chart
-    \item A medical researcher examining protein structure diagrams in a biochemistry paper
-    \item An engineer referencing circuit schematics in a technical datasheet
-    \item A legal professional analyzing tabular evidence in a court document
-\end{itemize}
-In each case, the critical information exists primarily in visual form. A sudden dip in a revenue chart, a complex chemical structure in a patent, or a specific architectural layout in a blueprint—these are the details users interact with most intensely. When a standard RAG ingestion pipeline processes a PDF, it typically employs an Optical Character Recognition (OCR) engine like Tesseract or AWS Textract to scrape text. During this process, complex figures are either:
-\begin{enumerate}
-    \item Ignored: The bounding box is skipped entirely, treating the image as irrelevant noise.
-    \item Flattened: Captions are read, but the visual data itself is lost. A chart titled ``Q3 Revenue Growth'' provides no information about the actual growth rate.
-    \item Corrupted: A chart is read as a jumble of unconnected numbers. OCR might extract ``2020 5M 2021 7M 2022 4M'' without understanding these represent a time series.
-\end{enumerate}
-We term this loss of information the ``Modality Gap.'' When a user asks, ``Why did sales drop in Q3?'' (referring to a bar chart), the text-only retriever finds no relevant vectors, forcing the LLM to either admit ignorance or hallucinate a plausible sounding reason based on surrounding text. This represents a fundamental failure mode that limits RAG's applicability to real-world document analysis tasks.
-
-\subsection{ChunkSmith: Bridging the Gap}
-This paper introduces \textbf{ChunkSmith}, a system explicitly architected to bridge the Modality Gap. Unlike prior works that attempt to solve this with end-to-end visual embedding models (which are often computationally prohibitive and less precise for text), ChunkSmith adopts a hybrid approach. It uses Multimodal LLMs as transducers, converting rich visual information into structured, semantically dense textual representations (summaries and potential questions) that can be indexed by standard, highly optimized vector databases. Our key insight is that while images cannot be directly embedded with the same fidelity as text, their semantic content can be extracted and represented textually through careful prompting of capable MLLMs. This approach combines the best of both worlds: the reasoning capabilities of large multimodal models during ingestion, and the efficiency of text-optimized retrieval during query time.
-
-\subsection{Contributions}
-Our contributions are as follows:
-\begin{itemize}
-    \item \textbf{Deep Semantic Extraction}: A pipeline that extracts tables and images as separate objects and uses MLLMs to generate detailed interpretations, including visual reasoning and data point extraction.
-    \item \textbf{Structured Prompt Engineering}: A methodology for prompting MLLMs to act as ``Question Generators,'' effectively pre-computing retrieval pathways and aligning document embeddings with potential user queries.
-    \item \textbf{High-Throughput Architecture}: A robust asynchronous backend design with API key rotation to handle the high latency of multimodal inference, achieving near-linear speedup with the number of available API keys.
-    \item \textbf{Visual Evidence Retrieval}: A user interaction model that retrieves and displays the source image alongside the AI generated answer for verification, enhancing trust and interpretability.
-
-\end{itemize}
-
-\section{Related Work}
-\subsection{Retrieval-Augmented Generation}
-The RAG paradigm was formalized by Lewis et al. \cite{lewis2020retrieval}, who demonstrated that retrieval could significantly improve factual accuracy in open-domain question answering. Since then, the field has evolved rapidly. Gao et al. \cite{gao2023retrieval} provide a comprehensive taxonomy, categorizing RAG systems into Naive RAG, Advanced RAG, and Modular RAG. Naive RAG follows a simple retrieve-then-generate pattern. While effective for basic use cases, it suffers from issues like retrieval of irrelevant context and inability to handle multi-hop reasoning. Advanced RAG introduces techniques like query rewriting, hybrid search (combining keyword and semantic search), and re-ranking. Systems like HyDE \cite{gao2022precise} generate hypothetical documents to improve retrieval, while others employ cross encoder re-rankers to refine initial retrieval results. Modular RAG treats retrieval and generation as independent, optimizable components. ChunkSmith aligns with this philosophy, introducing a specialized ingestion module for multimodal content.
-
-\subsection{Multimodal RAG Approaches}
-The field of Multimodal RAG is nascent but rapidly expanding. Abootorabi et al. \cite{abootorabi2025ask} classify approaches into three categories:
-\begin{enumerate}
-    \item \textbf{Vision-Centric Approaches}: Models like ColPali \cite{faysse2024colpali} represent a radical departure from OCR. They embed entire document pages as image patches using Vision Transformers (ViT). The system processes documents as pure images, bypassing text extraction entirely. While this preserves layout perfectly and can handle handwritten text or complex formatting, it introduces massive storage overhead (embedding every patch of every page) and requires specialized retrieval infrastructure (e.g., late interaction scoring with MaxSim operations), which is difficult to scale in commodity vector databases. ColQwen2 extends this approach with dynamic resolution handling, allowing the model to process documents at multiple scales. However, the computational cost remains prohibitive for large scale deployments.
-    \item \textbf{Caption-Based Approaches}: Earlier works \cite{hu2023reveal} attempted to use standard image captioning models (like BLIP-2) to generate text descriptions for images. The rationale was simple: convert images to text, then use standard text RAG. However, generic captions (e.g., ``A graph of a function'') are insufficient for answering specific questions about data points. REVEAL \cite{hu2023reveal} improved upon this by using contrastive learning to align visual and textual representations, but still relied on relatively shallow image descriptions. ChunkSmith improves upon this by using Large MLLMs rather than smaller captioning models, enabling ``Reasoning-based Description'' rather than simple captioning.
-    \item \textbf{Hybrid Approaches}: ChunkSmith falls into the hybrid category, similarly to Unstructured processing philosophy but adds a unique semantic layer. By generating ``Potential Questions'' alongside the description, we align the document embedding space with the user query space, a technique known as Document Expansion \cite{nogueira2019document} applied to the multimodal domain. Other hybrid systems like MuRAG \cite{chen2022murag} and RA-CM3 \cite{yasunaga2023retrieval} combine text and image retrieval but do not employ the structured semantic enrichment strategy that ChunkSmith introduces.
-\end{enumerate}
-
-\subsection{Multimodal Large Language Models}
-The recent explosion in MLLM capabilities has been driven by models like GPT-4V, Gemini Pro Vision, and LLaVA. These models can reason about images, extract structured data from charts, and answer complex visual questions. ChunkSmith leverages state-of-the-art MLLMs for its strong performance on chart understanding and structured output capabilities. Recent work on visual instruction tuning \cite{liu2023visual} has shown that MLLMs can be fine-tuned to follow specific formatting instructions, which is critical for our structured output requirements.
-
-\section{System Architecture}
-\begin{figure*}[htbp]
-    \centering
-    \includegraphics[width=\textwidth, height=0.98\textheight, keepaspectratio]{1.png}
-    \caption{ChunkSmith System Architecture.}
-    \label{fig:architecture}
-\end{figure*}
-
-The ChunkSmith architecture is designed as a modular, event-driven pipeline, as illustrated in Fig. \ref{fig:architecture}. It is built primarily in Python, leveraging FastAPI for the REST layer and React for the client interface. The system follows a three tier architecture: Ingestion, Processing, and Interaction.
-
-\subsection{Ingestion Layer (The Gateway)}
-The entry point for the system is the Ingestion Layer, responsible for handling raw PDF uploads and initial validation.
-\subsubsection{File Handling}
-\begin{itemize}
-    \item \textbf{Hashing \& Deduplication}: Every uploaded file is hashed using SHA-256. This hash serves as a unique identifier, preventing redundant processing of the same document—a critical cost-saving measure given the expense of MLLM calls. The hash is computed on the raw binary content before any processing.
-    \item \textbf{Validation}: Files are validated for MIME type (application/pdf), file size (configurable maximum of 50MB), and corruption (using pypdf's validation routines) before passing to the processing queue.
-    \item \textbf{Metadata Extraction}: Basic metadata (title, author, creation date, page count) is extracted and stored for later reference.
-\end{itemize}
-\subsubsection{Storage Architecture}
-ChunkSmith employs a hybrid storage strategy:
-\begin{itemize}
-    \item \textbf{Object Storage}: Raw PDFs and extracted images are stored in cloud object storage (e.g., S3, MinIO) for durability and accessibility.
-    \item \textbf{Vector Database}: Vectors, document metadata, processing status, and structured enriched content are stored in the vector database, serving as the single source of truth for retrieval.
+\item Use either SI (MKS) or CGS as primary units. (SI units are encouraged.) English units may be used as secondary units (in parentheses). An exception would be the use of English units as identifiers in trade, such as ``3.5-inch disk drive''.
+\item Avoid combining SI and CGS units, such as current in amperes and magnetic field in oersteds. This often leads to confusion because equations do not balance dimensionally. If you must use mixed units, clearly state the units for each quantity that you use in an equation.
+\item Do not mix complete spellings and abbreviations of units: ``Wb/m\textsuperscript{2}'' or ``webers per square meter'', not ``webers/m\textsuperscript{2}''. Spell out units when they appear in text: ``. . . a few henries'', not ``. . . a few H''.
+\item Use a zero before decimal points: ``0.25'', not ``.25''. Use ``cm\textsuperscript{3}'', not ``cc''.)
 \end{itemize}
 
-\subsection{The Content Processor (The Core)}
-The ContentProcessor class is the heart of ChunkSmith. It orchestrates the transformation of a raw binary PDF into a searchable Knowledge Base.
-\subsubsection{Decomposition Strategy}
-We utilize a multi-stage decomposition strategy designed to preserve document structure while enabling parallel processing:
-\begin{enumerate}
-    \item \textbf{Page Rendering}: pdf2image (wrapping Poppler) converts PDF pages into high-resolution images (300 DPI). This ensures that even vector graphics are captured accurately.
-    \item \textbf{Layout Analysis}: We employ YOLOv11 for high precision layout detection. The model is fine-tuned to detect specific document elements, classifying regions into:
-    \begin{itemize}
-        \item UncategorizedText
-        \item PageNumber
-        \item Table
-        \item Footer
-        \item Title
-        \item Formula
-        \item Image
-        \item NarrativeText
-    \end{itemize}
-    \item \textbf{OCR Application}: Tesseract OCR is applied to text regions. Tesseract is configured with:
-    \begin{itemize}
-        \item LSTMengine mode for handling multi-column scientific layouts
-        \item Language packs for 90+ languages
-        \item Custom configuration for technical documents (preserving special characters, equations)
-    \end{itemize}
-    \item \textbf{Chunking Strategy}: We employ a ``Chunk by Title'' strategy, which leverages the document's inherent structural hierarchy. Instead of sliding windows, text segments are aggregated based on section headers and titles detected by our fine-tuned YOLOv11 layout model. This approach ensures that semantic units—such as complete subsections or distinct topics—are preserved within a single chunk, enhancing retrieval coherence by aligning chunk boundaries with the author's intended logical structure.
-\end{enumerate}
-
-\subsubsection{Visual Object Management}
-Images detected within the PDF are not merely saved. A sophisticated filtering logic applies to eliminate noise:
+\subsection{Equations}
+Number equations consecutively. To make your 
+equations more compact, you may use the solidus (~/~), the exp function, or 
+appropriate exponents. Italicize Roman symbols for quantities and variables, 
+but not Greek symbols. Use a long dash rather than a hyphen for a minus 
+sign. Punctuate equations with commas or periods when they are part of a 
+sentence, as in:
 \begin{equation}
-Keep(I) = \begin{cases} 
-1 & \text{if } Area(I) > \theta_{area} \land Aspect(I) \in [\phi_{min}, \phi_{max}] \\
-0 & \text{otherwise}
-\end{cases}
+a+b=\gamma\label{eq}
 \end{equation}
-where $\theta_{area} = 10000$ pixels$^2$, $\phi_{min} = 0.2$, and $\phi_{max} = 5.0$. This filters out:
+
+Be sure that the 
+symbols in your equation have been defined before or immediately following 
+the equation. Use ``\eqref{eq}'', not ``Eq.~\eqref{eq}'' or ``equation \eqref{eq}'', except at 
+the beginning of a sentence: ``Equation \eqref{eq} is . . .''
+
+\subsection{\LaTeX-Specific Advice}
+
+Please use ``soft'' (e.g., \verb|\eqref{Eq}|) cross references instead
+of ``hard'' references (e.g., \verb|(1)|). That will make it possible
+to combine sections, add equations, or change the order of figures or
+citations without having to go through the file line by line.
+
+Please don't use the \verb|{eqnarray}| equation environment. Use
+\verb|{align}| or \verb|{IEEEeqnarray}| instead. The \verb|{eqnarray}|
+environment leaves unsightly spaces around relation symbols.
+
+Please note that the \verb|{subequations}| environment in {\LaTeX}
+will increment the main equation counter even when there are no
+equation numbers displayed. If you forget that, you might write an
+article in which the equation numbers skip from (17) to (20), causing
+the copy editors to wonder if you've discovered a new method of
+counting.
+
+{\BibTeX} does not work by magic. It doesn't get the bibliographic
+data from thin air but from .bib files. If you use {\BibTeX} to produce a
+bibliography you must send the .bib files. 
+
+{\LaTeX} can't read your mind. If you assign the same label to a
+subsubsection and a table, you might find that Table I has been cross
+referenced as Table IV-B3. 
+
+{\LaTeX} does not have precognitive abilities. If you put a
+\verb|\label| command before the command that updates the counter it's
+supposed to be using, the label will pick up the last counter to be
+cross referenced instead. In particular, a \verb|\label| command
+should not go before the caption of a figure or a table.
+
+Do not use \verb|\nonumber| inside the \verb|{array}| environment. It
+will not stop equation numbers inside \verb|{array}| (there won't be
+any anyway) and it might stop a wanted equation number in the
+surrounding equation.
+
+\subsection{Some Common Mistakes}\label{SCM}
 \begin{itemize}
-    \item Navigational elements (arrows, bullets)
-    \item Small icons and logos
-    \item Decorative borders
-    \item Extremely narrow or wide artifacts
+\item The word ``data'' is plural, not singular.
+\item The subscript for the permeability of vacuum $\mu_{0}$, and other common scientific constants, is zero with subscript formatting, not a lowercase letter ``o''.
+\item In American English, commas, semicolons, periods, question and exclamation marks are located within quotation marks only when a complete thought or name is cited, such as a title or full quotation. When quotation marks are used, instead of a bold or italic typeface, to highlight a word or phrase, punctuation should appear outside of the quotation marks. A parenthetical phrase or statement at the end of a sentence is punctuated outside of the closing parenthesis (like this). (A parenthetical sentence is punctuated within the parentheses.)
+\item A graph within a graph is an ``inset'', not an ``insert''. The word alternatively is preferred to the word ``alternately'' (unless you really mean something that alternates).
+\item Do not use the word ``essentially'' to mean ``approximately'' or ``effectively''.
+\item In your paper title, if the words ``that uses'' can accurately replace the word ``using'', capitalize the ``u''; if not, keep using lower-cased.
+\item Be aware of the different meanings of the homophones ``affect'' and ``effect'', ``complement'' and ``compliment'', ``discreet'' and ``discrete'', ``principal'' and ``principle''.
+\item Do not confuse ``imply'' and ``infer''.
+\item The prefix ``non'' is not a word; it should be joined to the word it modifies, usually without a hyphen.
+\item There is no period after the ``et'' in the Latin abbreviation ``et al.''.
+\item The abbreviation ``i.e.'' means ``that is'', and the abbreviation ``e.g.'' means ``for example''.
 \end{itemize}
-Valid images are uploaded to Object Storage with a structured path:
-\begin{verbatim}
-{project_id}/images/image_{counter:04d}.png
-\end{verbatim}
-Their local paths are swapped for URLs in the metadata, ensuring they can be rendered later.
+An excellent style manual for science writers is \cite{b7}.
 
-\subsection{Structured Semantic Enrichment}
-This is the system’s primary innovation. Raw text extraction from a complex chart is often gibberish. Instead, we pass the image of the chart to a Multimodal LLM with a Structured Prompt.
-\subsubsection{The AIParser Schema}
-We define a Pydantic model that enforces strict output structure:
-\begin{lstlisting}[language=Python, caption=AIParser Schema Definition]
-class AIParser(BaseModel):
-    question: str = Field(
-        description="List all potential questions that can be answered from this content"
-    )
-    ai_title: str = Field(
-        description="Give a suitable title for the content"
-    )
-    image_interpretation: List[str] = Field(
-        description="Detailed analysis of each image"
-    )
-    table_title: List[str] = Field(
-        description="Give a suitable title for the table "
-    )
-\end{lstlisting}
-This schema is passed to the MLLM using structured output features (e.g., JSON mode or function calling), which guaranties that the response will conform to the schema or fail explicitly (rather than returning malformed JSON).
+\subsection{Authors and Affiliations}
+\textbf{The class file is designed for, but not limited to, six authors.} A 
+minimum of one author is required for all conference articles. Author names 
+should be listed starting from left to right and then moving down to the 
+next line. This is the author sequence that will be used in future citations 
+and by indexing services. Names should not be listed in columns nor group by 
+affiliation. Please keep your affiliations as succinct as possible (for 
+example, do not differentiate among departments of the same organization).
 
-\subsubsection{Prompt Engineering}
-The prompt (shown in full in Listing \ref{lst:prompt}) employs several advanced techniques:
-\begin{itemize}
-    \item \textbf{Task Decomposition}: Breaking the analysis into distinct subtasks ( topics, questions, visual analysis)
-    \item \textbf{Explicit Constraints}: Specifying exact list lengths to prevent hallucination
-    \item \textbf{Findability Optimization}: Instructing the model to prioritize searchability over brevity
-    \item \textbf{Vocabulary Preservation}: Requesting that the model use words similar to the original content
-\end{itemize}
-\begin{lstlisting}[language=Python, caption=The Semantic Enrichment Prompt, label=lst:prompt, basicstyle=\ttfamily\scriptsize\color{black}, keywordstyle=\color{black}, stringstyle=\color{black}, commentstyle=\color{black}]
-prompt_text = f"""You are creating a searchable description for document content retrieval.
-YOUR TASK:
-Generate a comprehensive, searchable description that covers:
-1. Key facts, numbers, and data points from text and tables
-2. Main topics and concepts discussed
-3. Questions this content could answer
-4. Visual content analysis (charts, diagrams, patterns in images)
-5. Alternative search terms users might use
-Make it detailed and searchable- prioritize findability over brevity.
-Keep words similar to the original content for better search accuracy.
-STRICT OUTPUT CONSTRAINTS:
-- You received {num_images} images. You MUST return exactly {num_images} items in 'image_interpretation'.
-- You received {num_tables} tables. You MUST return exactly {num_tables} items in 'table_title'.
-- If {num_images} is 0, 'image_interpretation' MUST be an empty list [].
-- If {num_tables} is 0, 'table_title' MUST be an empty list [].
-IMPORTANT: Return structured output with these fields:
-- question: All potential questions this content answers
-- ai_title: Comprehensive title of all information
-- image_interpretation: Detailed analysis of visual elements
-- table_title: Title of all Row-column of tabular data
-CONTENT TO ANALYZE:
-TEXT CONTENT: {text}
-TABLES: {tables}
-[Images provided as base64]
-"""
-\end{lstlisting}
+\subsection{Identify the Headings}
+Headings, or heads, are organizational devices that guide the reader through 
+your paper. There are two types: component heads and text heads.
 
-\subsubsection{Strategic Rationale}
-We generate these specific fields for two critical optimizations:
-\begin{enumerate}
-    \item \textbf{Latency Reduction via Decoupled Modality}: By converting visual information into dense text summaries during ingestion, the retrieval-time LLM operates purely in the text domain. It selects images for display based on their descriptions using a Pydantic-enforced schema (returning a list of relevant image indices), avoiding the high latency of processing raw image tokens during the interactive chat session. The LLM acts as a high-speed router, verifying relevance against the text summary before authorizing the client to fetch the heavy image assets.
-    \item \textbf{Retrieval Alignment via Document Expansion}: Generating ``potential questions'' explicitly bridges the semantic gap between document content and user queries. Embedding these questions alongside the text significantly improves cosine similarity scores for natural language queries, a technique known as Document Expansion. This ensures that a user asking ``How does the revenue trend look?'' matches the generated question ``What is the revenue trend in Q3?'' even if the raw chart data lacks those explicit keywords.
-    \item \textbf{Architectural Efficiency and Cost Reduction}: Unlike vision-centric approaches such as ColPali, which require specialized vision-language transformers for both indexing and retrieval (often necessitating dual-encoder architectures), our approach relies on a standard, highly-optimized text transformer for the retrieval phase. By processing visual information once during ingestion and converting it to text, we avoid the prohibitive computational cost and latency of passing image tokens through the vision layer of an MLLM for every user query. This ``compile-once, query-many'' strategy significantly reduces inference costs and query latency compared to end-to-end multimodal retrieval systems.
-\end{enumerate}
+Component heads identify the different components of your paper and are not 
+topically subordinate to each other. Examples include Acknowledgments and 
+References and, for these, the correct style to use is ``Heading 5''. Use 
+``figure caption'' for your Figure captions, and ``table head'' for your 
+table title. Run-in heads, such as ``Abstract'', will require you to apply a 
+style (in this case, italic) in addition to the style provided by the drop 
+down menu to differentiate the head from the text.
 
-\subsection{Asynchronous Multimodal Inference}
-MLLM API calls are slow (2-5 seconds per request) and rate-limited (typically 60 requests per minute per key). Serial processing of a 50-page document would take minutes. ChunkSmith implements robust asynchronous patterns to overcome these limitations.
-\begin{enumerate}
-    \item \textbf{Round-Robin Key Rotation}: We maintain a pool of API Keys $\mathcal{K} = \{k_1, k_2, ..., k_n\}$. For a batch of chunks $\mathcal{C} = \{c_1, c_2, ..., c_m\}$, the scheduler assigns:
-    \begin{equation}
-    Assign(c_i) \rightarrow k_{(i \mod n)}
-    \end{equation}
-    This distributes the load across multiple quotas, maximizing effective throughput. With $n$ keys, the theoretical maximum throughput is:
-    \begin{equation}
-    T_{max} = n \times R_{key}
-    \end{equation}
-    where $R_{key}$ is the rate limit per key (e.g., 60 RPM).
-    \item \textbf{Concurrency Control}: We leverage Python’s \texttt{asyncio.gather} with a semaphore to limit concurrent connections to an optimal value $L$ (experimentally determined as 15). The algorithm is shown in Algorithm \ref{alg:async}. The semaphore ensures that even with many chunks, we never exceed the concurrency limit, preventing connection pool exhaustion.
-\end{enumerate}
+Text heads organize the topics on a relational, hierarchical basis. For 
+example, the paper title is the primary text head because all subsequent 
+material relates and elaborates on this one topic. If there are two or more 
+sub-topics, the next level head (uppercase Roman numerals) should be used 
+and, conversely, if there are not at least two sub-topics, then no subheads 
+should be introduced.
 
-\begin{algorithm}
-\caption{Async Chunk Processing with Key Rotation}
-\label{alg:async}
-\begin{algorithmic}[1]
-\REQUIRE $Chunks$, $ApiKeys$, $ConcurrencyLimit$
-\STATE $Tasks \leftarrow []$
-\STATE $Semaphore \leftarrow CreateSemaphore(ConcurrencyLimit)$
-\FOR{$i \leftarrow 0$ \TO $Length(Chunks) - 1$}
-    \STATE $Key \leftarrow ApiKeys[i \pmod{Length(ApiKeys)}]$
-    \STATE $Task \leftarrow \text{AsyncCall}(MLLM, Chunks[i], Key, Semaphore)$
-    \STATE $Tasks.Append(Task)$
-\ENDFOR
-\STATE $Results \leftarrow \text{Await}(Tasks)$
-\RETURN $Results$
-\end{algorithmic}
-\end{algorithm}
+\subsection{Figures and Tables}
+\paragraph{Positioning Figures and Tables} Place figures and tables at the top and 
+bottom of columns. Avoid placing them in the middle of columns. Large 
+figures and tables may span across both columns. Figure captions should be 
+below the figures; table heads should appear above the tables. Insert 
+figures and tables after they are cited in the text. Use the abbreviation 
+``Fig.~\ref{fig}'', even at the beginning of a sentence.
 
-\subsection{Vector Storage Schema}
-We use a high-performance vector store (e.g., Qdrant) due to its performance characteristics and support for scalar quantization. The vector embedding is computed as:
-\begin{equation}
-V_D = \mathcal{E}\left( S_{AI} \oplus Q_{AI} \oplus I_{desc} \oplus T_{table} \right)
-\end{equation}
-Where:
-\begin{itemize}
-    \item $\mathcal{E}$ is the embedding function (e.g., \texttt{text-embedding-3-large} or similar high-dimensional models)
-    \item $S_{AI}$ is the AI-generated title
-    \item $Q_{AI}$ is the list of predicted questions
-    \item $I_{desc}$ is the detailed image interpretation
-    \item $T_{table}$ is the table title
-\end{itemize}
-The concatenation operator $\oplus$ represents string concatenation with appropriate delimiters. The final payload stored in the vector database includes:
-\begin{lstlisting}[language=Python, caption=Vector Payload Structure]
-payload = {
-    "chunk_index": int,
-    "original_text": str,
-    "ai_title": str,
-    "ai_questions": str,
-    "image_paths": List[str], # URLs
-    "image_interpretation": List[str],
-    "table_original": List[str],
-    "table_title": List[str],
-    "page_numbers": List[int],
-    "content_types": List[str] # ["text", "image", "table"]
-}
-\end{lstlisting}
-
-\subsection{Context-Aware Information Retrieval}
-To optimize the utilization of the multimodal context window, we introduce a Context Manager downstream of the retrieval layer.
-\subsubsection{Context Storage and Management}
-A Context Manager is introduced after vector retrieval to track multimodal context. If an image is already present in the LLM context window, it is not re-injected, thereby reducing redundant context, token overhead, and hallucination. The data flow is updated as follows:
-\begin{equation}
-Vector Database \rightarrow Context Manager \rightarrow LLM
-\end{equation}
-The LLM maintains a multimodal context state (text + images). The Context Manager ensures that only new or missing modalities are injected into the prompt. Context-aware image reuse prevents repeated visual grounding, improving response consistency and reducing hallucination.
-
-\subsection{Structured Response Generation}
-To ensure that the final response presented to the user is both informative and visually enriched without being cluttered, we employ a second structured generation step. The retrieval-time LLM is prompted to produce its answer according to the \texttt{AIAnswer} schema (Listing \ref{lst:answer_schema}). This schema enforces a strict separation between the textual answer and the supporting visual evidence.
-
-\begin{lstlisting}[language=Python, caption=AIAnswer Generation Schema, label=lst:answer_schema]
-class AIAnswer(BaseModel):
-    text: str = Field(
-        description="Text information only"
-    )
-    images: List[bool] = Field(
-        description="List of boolean flags indicating which images from the context context should be shown to the user"
-    )
-\end{lstlisting}
-The \texttt{images} field serves as a control signal, allowing the LLM to selectively toggle the visibility of images based on their relevance to the generated text, ensuring a clean and focused user experience.
-
-\section{Methodology}
-\subsection{Mathematical Formulation of Retrieval}
-Given a user query $q$, the retrieval process can be formalized as:
-\begin{equation}
-\mathcal{R}(q) = \text{TopK}\left( \{ (d_i, \text{sim}(V_q, V_{d_i})) \mid d_i \in \mathcal{D} \} \right)
-\end{equation}
-where:
-\begin{itemize}
-    \item $V_q = \mathcal{E}(q)$ is the query embedding
-    \item $V_{d_i}$ is the document chunk embedding
-    \item $\text{sim}(\cdot, \cdot)$ is cosine similarity
-    \item $\mathcal{D}$ is the document corpus
-    \item $\text{TopK}$ returns the $k$ highest-scoring documents
-\end{itemize}
-The cosine similarity is computed as:
-\begin{equation}
-\text{sim}(V_q, V_d) = \frac{V_q \cdot V_d}{\|V_q\| \|V_d\|}
-\end{equation}
-The vector database optimizes this computation using HNSW (Hierarchical Navigable Small World) graphs, achieving sub-linear search complexity.
-
-\subsection{Cost and Latency Modeling}
-The total ingestion cost for a document can be modeled as:
-\begin{equation}
-C_{total} = C_{OCR} + C_{MLLM} + C_{embed} + C_{storage}
-\end{equation}
-For a document with $N$ chunks, $I$ images, and $T$ tables:
-\begin{align}
-C_{MLLM} &= \sum_{i=1}^{N} \left( P_{text}^{(i)} \times R_{in} + P_{out}^{(i)} \times R_{out} \right) \\
-&\quad + \sum_{j=1}^{I} \left( P_{img}^{(j)} \times R_{img} \right)
-\end{align}
-where $P_{text}^{(i)}$ is the input token count for chunk $i$, $P_{out}^{(i)}$ is the output token count, $P_{img}^{(j)}$ is the image token equivalent, and $R_{in}$, $R_{out}$, $R_{img}$ are the respective pricing rates.
-The latency model for asynchronous processing is:
-\begin{equation}
-T_{total} = \max_{k \in \mathcal{K}} \left( \frac{N_k}{R_k} \right) + \frac{L_{max}}{B}
-\end{equation}
-where $N_k$ is the number of chunks assigned to key $k$, $R_k$ is the rate limit for key $k$, $L_{max}$ is the maximum latency for a single MLLM call, and $B$ is the batch size.
-
-It is crucial to note that this $T_{total}$ represents the \textbf{one-time ingestion latency}. Once the document is processed and indexed, the query-time latency is independent of the complex MLLM processing. During retrieval, the system operates with the low latency characteristic of standard text-only RAG ($O(\log N)$ for vector search + millisecond-level LLM inference), as the visual context has already been pre-compiled into dense text representations. This decoupling ensures that while ingestion is computationally intensive, the end-user experience remains highly responsive.
-
-\section{Implementation Details}
-\subsection{Technology Stack}
-ChunkSmith is implemented using the following technologies:
-\begin{itemize}
-    \item \textbf{Backend}: Python 3.10+, FastAPI, LangChain, Pydantic
-    \item \textbf{Frontend}: React 18, TypeScript, TailwindCSS
-    \item \textbf{Vector Database}: Any High-Performance Vector DB (e.g., Qdrant)
-    \item \textbf{Object Storage}: Any S3-compatible Storage (e.g., Supabase)
-    \item \textbf{MLLM Provider}: Multimodal LLM (e.g., Gemini, GPT-4V)
-    \item \textbf{Embedding Model}: High-dimensional Text Embedding
-    \item \textbf{OCR}: Tesseract 5.0+
-    \item \textbf{Layout Analysis}: YOLOv11
-\end{itemize}
-
-\subsection{Configuration Parameters}
-Key configuration parameters and their rationale:
-\begin{table}[h]
-\centering
-\caption{System Configuration Parameters}
-\begin{tabular}{@{}lll@{}}
-\toprule
-\textbf{Parameter} & \textbf{Value} & \textbf{Rationale} \\ \midrule
-Max Chunk Size & 3000 chars & Balance context \& precision \\
-Concurrency & 15 & Optimal for network I/O \\
-Image Min Area & 10k px$^2$ & Filter small artifacts \\
-Aspect Ratio & [0.2, 5.0] & Exclude extreme shapes \\
-Temperature & 0.0 & Deterministic outputs \\
-Top-K Retrieval & 5 & Standard for RAG systems \\ \bottomrule
+\begin{table}[htbp]
+\caption{Table Type Styles}
+\begin{center}
+\begin{tabular}{|c|c|c|c|}
+\hline
+\textbf{Table}&\multicolumn{3}{|c|}{\textbf{Table Column Head}} \\
+\cline{2-4} 
+\textbf{Head} & \textbf{\textit{Table column subhead}}& \textbf{\textit{Subhead}}& \textbf{\textit{Subhead}} \\
+\hline
+copy& More table copy$^{\mathrm{a}}$& &  \\
+\hline
+\multicolumn{4}{l}{$^{\mathrm{a}}$Sample of a Table footnote.}
 \end{tabular}
-\label{tab:config}
+\label{tab1}
+\end{center}
 \end{table}
 
-\section{Experimental Evaluation}
-\subsection{Experimental Setup}
-We evaluated ChunkSmith on a private corpus of 50 technical PDF documents, including:
-\begin{itemize}
-    \item 15 NCERT textbook class 11 \& 12 (highly technical, many diagrams)
-    \item 15 Financial 10-K Reports (dense tables, financial charts)
-    \item 10 Medical Research Papers (molecular diagrams, statistical plots)
-    \item 10 Engineering Textbooks (schematics, equations, graphs)
-\end{itemize}
-Total corpus statistics:
-\begin{itemize}
-    \item Total pages: 1,247
-    \item Total images: 892
-    \item Total tables: 456
-    \item Total text chunks: 3,421
-\end{itemize}
+\begin{figure}[htbp]
+\centerline{\includegraphics{fig1.png}}
+\caption{Example of a figure caption.}
+\label{fig}
+\end{figure}
 
-\subsection{Throughput Analysis}
-We compared three ingestion configurations:
-\begin{enumerate}
-    \item \textbf{Serial Baseline}: Single thread, single API key, synchronous processing
-    \item \textbf{Naive Async}: Multi-threaded, single key (expected to hit rate limits)
-    \item \textbf{ChunkSmith}: Async with 7-key rotation
-\end{enumerate}
-\begin{table}[h]
-\centering
-\caption{Ingestion Performance for 20-Page Document}
-\begin{tabular}{@{}lccc@{}}
-\toprule
-\textbf{Method} & \textbf{Time (sec)} & \textbf{Success Rate} & \textbf{Cost (\$)} \\ \midrule
-Serial          & 210                 & 100\%                 & 0.42 \\
-Naive Async     & 40                  & 30\% (429 Errors)     & 0.13 \\
-\textbf{ChunkSmith} & \textbf{45}     & \textbf{100\%}        & \textbf{0.42} \\ \bottomrule
-\end{tabular}
-\label{tab:perf}
-\end{table}
-As shown in Table \ref{tab:perf}, ChunkSmith achieves a 4.67x speedup compared to the serial baseline while maintaining 100\% reliability. The naive async approach fails catastrophically due to rate limiting.
+Figure Labels: Use 8 point Times New Roman for Figure labels. Use words 
+rather than symbols or abbreviations when writing Figure axis labels to 
+avoid confusing the reader. As an example, write the quantity 
+``Magnetization'', or ``Magnetization, M'', not just ``M''. If including 
+units in the label, present them within parentheses. Do not label axes only 
+with units. In the example, write ``Magnetization (A/m)'' or ``Magnetization 
+\{A[m(1)]\}'', not just ``A/m''. Do not label axes with a ratio of 
+quantities and units. For example, write ``Temperature (K)'', not 
+``Temperature/K''.
 
-\subsection{Retrieval Quality Evaluation}
-We crafted a test set of 100 queries:
-\begin{itemize}
-    \item 50 ``Visual Queries'' (can only be answered by examining images/tables)
-    \item 50 ``Text Queries'' (can be answered from text alone)
-\end{itemize}
-Example visual queries:
-\begin{itemize}
-    \item ``What was the revenue in Q3 2022?'' (requires reading a chart)
-    \item ``Show me the circuit diagram for the power supply'' (requires image retrieval)
-    \item ``What is the p-value in the statistical analysis table?'' (requires table reading)
-\end{itemize}
+\section*{Acknowledgment}
 
-\subsubsection{Metrics}
-We evaluated using:
-\begin{itemize}
-    \item \textbf{Recall@K}: Fraction of queries where the correct chunk appears in top-K results
-    \item \textbf{MRR (Mean Reciprocal Rank)}: Average of $1/rank$ where rank is position of first relevant result
-    \item \textbf{Human Evaluation}: Manual assessment of answer quality on 5-point scale
-\end{itemize}
+The preferred spelling of the word ``acknowledgment'' in America is without 
+an ``e'' after the ``g''. Avoid the stilted expression ``one of us (R. B. 
+G.) thanks $\ldots$''. Instead, try ``R. B. G. thanks$\ldots$''. Put sponsor 
+acknowledgments in the unnumbered footnote on the first page.
 
-\begin{table}[h]
-\centering
-\caption{Retrieval Performance Comparison}
-\begin{tabular}{@{}lcccc@{}}
-\toprule
-\textbf{System} & \textbf{Text R@5} & \textbf{Visual R@5} & \textbf{MRR} & \textbf{Quality} \\ \midrule
-Text-Only RAG   & 0.94 & 0.08 & 0.51 & 2.1/5 \\
-ColPali         & 0.89 & 0.92 & 0.72 & 4.2/5 \\
-\textbf{ChunkSmith} & \textbf{0.96} & \textbf{0.92} & \textbf{0.84} & \textbf{4.3/5} \\ \bottomrule
-\end{tabular}
-\label{tab:retrieval}
-\end{table}
-ChunkSmith significantly outperforms both baselines, achieving 92\% recall on visual queries while maintaining high text retrieval performance.
+\section*{References}
 
-\subsection{Ablation Studies}
-To understand the contribution of each component, we conducted ablation studies:
-\begin{table}[h]
-\centering
-\caption{Ablation Study Results (Visual Query Recall@5)}
-\begin{tabular}{@{}lc@{}}
-\toprule
-\textbf{Configuration} & \textbf{Recall@5} \\ \midrule
-Full ChunkSmith & 0.92 \\
-- Question Generation & 0.67 \\
-- Image Interpretation & 0.45 \\
-- Table Title & 0.78 \\
-- Chunk Title & 0.85 \\
-Only OCR Text & 0.08 \\ \bottomrule
-\end{tabular}
-\label{tab:ablation}
-\end{table}
-The question generation component provides the largest single contribution (+25\% recall), validating our hypothesis that aligning embeddings with potential queries is highly effective.
+Please number citations consecutively within brackets \cite{b1}. The 
+sentence punctuation follows the bracket \cite{b2}. Refer simply to the reference 
+number, as in \cite{b3}---do not use ``Ref. \cite{b3}'' or ``reference \cite{b3}'' except at 
+the beginning of a sentence: ``Reference \cite{b3} was the first $\ldots$''
 
-\section{Discussion}
-\subsection{Cost-Benefit Analysis}
-While ChunkSmith is more expensive than text-only RAG during ingestion, the cost is amortized over many queries. For a 100-page document:
-\begin{itemize}
-    \item Text-Only RAG: \$0.05 ingestion, 8\% visual query success
-    \item ColPali: \$0.15 ingestion, 92\% visual query success, but suffers from high query-time latency and cost.
-    \item ChunkSmith: \$2.10 ingestion, 92\% visual query success
-\end{itemize}
-For organizations where visual information is critical, the upfront ingestion cost is justified. Furthermore, when compared to ColPali, ChunkSmith enables significant savings by eliminating the need for a dense visual embedding transformer at query time. ColPali necessitates a specialized dense vector embedding transformer for images, which is computationally expensive as every retrieval operation requires passing image tokens through the heavy vision model (transcription layer) before reaching the NLP layer. While this direct-embedding approach is viable for short runs or low-traffic prototypes, it scales poorly; as query volume increases, the cumulative compute cost of running the vision layer for every search makes it unsustainable. ChunkSmith's text-only retrieval path avoids this bottleneck entirely.
+Number footnotes separately in superscripts. Place the actual footnote at 
+the bottom of the column in which it was cited. Do not put footnotes in the 
+abstract or reference list. Use letters for table footnotes.
 
-\subsection{Scalability Considerations}
-ChunkSmith scales horizontally through:
-\begin{itemize}
-    \item Stateless Processing: Each chunk is processed independently
-    \item Cloud Storage: Object storage handles scaling automatically
-    \item Vector DB Sharding: Modern vector databases support distributed deployments
-\end{itemize}
-Current bottleneck is MLLM API throughput, which scales linearly with the number of API keys.
+Unless there are six authors or more give all authors' names; do not use 
+``et al.''. Papers that have not been published, even if they have been 
+submitted for publication, should be cited as ``unpublished'' \cite{b4}. Papers 
+that have been accepted for publication should be cited as ``in press'' \cite{b5}. 
+Capitalize only the first word in a paper title, except for proper nouns and 
+element symbols.
 
-\subsection{Limitations and Future Work}
-Current limitations include:
-\begin{itemize}
-    \item OCR Dependency: Poor quality scans produce garbage text
-    \item Cost: High ingestion cost may be prohibitive for some use cases
-    \item Latency: 2-5 second MLLM calls add ingestion latency
-    \item Language Support: Primarily tested on English documents
-\end{itemize}
-Future work will address these through:
-\begin{itemize}
-    \item Local MLLM Integration: Using quantized models like LLaVA 1.6
-    \item Video Support: Extending to video frame sampling and transcription
-    \item GraphRAG: Building knowledge graphs to link entities across chunks
-    \item Multilingual Evaluation: Testing on non-English corpora
-\end{itemize}
+For papers published in translation journals, please give the English 
+citation first, followed by the original foreign-language citation \cite{b6}.
 
-\section{Conclusion}
-ChunkSmith represents a significant advancement in Multimodal RAG systems. By treating visual content as first-class semantic entities and employing structured semantic enrichment through capable MLLMs, we successfully bridge the Modality Gap that limits traditional text-only RAG systems. Our asynchronous architecture with API key rotation demonstrates that high-throughput multimodal processing is achievable with commodity cloud services. The system's 92\% recall on visual queries, compared to 8\% for text-only baselines, validates the core hypothesis that deep semantic extraction of visual content is essential for comprehensive document understanding. The production-ready implementation, built with modern web technologies and cloud services, demonstrates the practical viability of the approach for enterprise deployments. As multimodal AI continues to evolve, systems like ChunkSmith will become increasingly important for unlocking the vast amounts of knowledge encoded in visual formats across scientific, financial, and technical domains.
-
-\bibliographystyle{IEEEtran}
 \begin{thebibliography}{00}
-\bibitem{lewis2020retrieval} P. Lewis, et al., ``Retrieval-Augmented Generation for Knowledge-Intensive NLP Tasks,'' in \textit{Proc. NeurIPS}, 2020.
-\bibitem{karpukhin2020dense} V. Karpukhin, et al., ``Dense Passage Retrieval for Open-Domain Question Answering,'' in \textit{Proc. EMNLP}, 2020.
-\bibitem{abootorabi2025ask} M. M. Abootorabi, et al., ``Ask in Any Modality: A Comprehensive Survey on Multimodal Retrieval-Augmented Generation,'' \textit{arXiv preprint arXiv:2502.08826}, 2025.
-\bibitem{faysse2024colpali} M. Faysse, et al., ``ColPali: Efficient Document Retrieval with Vision Language Models,'' \textit{arXiv preprint arXiv:2407.01449}, 2024.
-\bibitem{hu2023reveal} Z. Hu, et al., ``REVEAL: Retrieval-Augmented Visual-Language Pre-Training with Multi-Source Multimodal Knowledge Memory,'' in \textit{Proc. CVPR}, 2023.
-\bibitem{nogueira2019document} R. Nogueira, et al., ``Document Expansion by Query Prediction,'' \textit{arXiv preprint arXiv:1904.08375}, 2019.
-\bibitem{gao2023retrieval} Y. Gao, et al., ``Retrieval-Augmented Generation for Large Language Models: A Survey,'' \textit{arXiv preprint arXiv:2312.10997}, 2023.
-\bibitem{salton1988term} G. Salton and C. Buckley, ``Term-weighting approaches in automatic text retrieval,'' \textit{Information processing \& management}, vol. 24, no. 5, pp. 513--523, 1988.
-\bibitem{robertson2009probabilistic} S. Robertson and H. Zaragoza, ``The probabilistic relevance framework: BM25 and beyond,'' \textit{Foundations and Trends in Information Retrieval}, vol. 3, no. 4, pp. 333--389, 2009.
-\bibitem{vaswani2017attention} A. Vaswani, et al., ``Attention is all you need,'' in \textit{Advances in neural information processing systems}, 2017.
-\bibitem{devlin2018bert} J. Devlin, et al., ``BERT: Pre-training of Deep Bidirectional Transformers for Language Understanding,'' in \textit{Proc. NAACL}, 2019.
-\bibitem{gao2022precise} L. Gao, et al., ``Precise Zero-Shot Dense Retrieval without Relevance Labels,'' in \textit{Proc. ACL}, 2023.
-\bibitem{chen2022murag} J. Chen, et al., ``MuRAG: Multimodal Retrieval-Augmented Generator,'' \textit{arXiv preprint}, 2022.
-\bibitem{yasunaga2023retrieval} M. Yasunaga, et al., ``Retrieval-Augmented Multimodal Language Modeling,'' in \textit{Proc. ICML}, 2023.
-\bibitem{liu2023visual} H. Liu, et al., ``Visual Instruction Tuning,'' in \textit{Proc. NeurIPS}, 2023.
-\bibitem{hybridrag2025}
-``Hybrid RAG-empowered Multi-modal LLM for Secure Data Management,'' \textit{arXiv preprint}, 2025.
-\bibitem{msier2025}
-``MSIER: Textual Effects on Multimodal In-Context Retrieval,'' \textit{arXiv preprint}, 2025.
-\bibitem{rule2025}
-``RULE: Reliable Multimodal RAG for Medical VQA Factuality,'' \textit{arXiv preprint}, 2025.
-\bibitem{m2raap2025}
-``M2-RAAP: Multi-Modal Recipe for Zero-shot Video-Text Retrieval,'' \textit{arXiv preprint}, 2025.
-\bibitem{ramm2025}
-``RAMM: Retrieval-Augmented Biomedical VQA,'' \textit{arXiv preprint}, 2025.
-\bibitem{cornellius2025}
-CornelliusYW, ``Multimodal RAG with CLIP/Whisper/Qwen-VL,'' GitHub repository, 2025. [Online]. Available: \url{https://github.com/CornelliusYW/Multimodal-RAG}
-\bibitem{ahmedal2024}
-AhmedAl93, ``Agentic Multimodal RAG,'' GitHub repository, 2024. [Online]. Available: \url{https://github.com/AhmedAl93/Agentic-Multimodal-RAG}
-\bibitem{azure2024}
-Azure-Samples, ``Azure Multimodal RAG with Code Execution,'' GitHub repository, 2024. [Online]. Available: \url{https://github.com/Azure-Samples/multimodal-rag-code-execution}
-\bibitem{aishwaryanr2025}
-aishwaryanr, ``Most Impactful RAG Papers Table,'' GitHub repository, 2025. [Online]. Available: \url{https://github.com/aishwaryanr/RAG_Papers}
-\bibitem{genesis2025}
-``Top 25 Types of RAG,'' Genesis Human Experience Blog, 2025. [Online]. Available: \url{https://genesishumanexperience.com}
+\bibitem{b1} G. Eason, B. Noble, and I. N. Sneddon, ``On certain integrals of Lipschitz-Hankel type involving products of Bessel functions,'' Phil. Trans. Roy. Soc. London, vol. A247, pp. 529--551, April 1955.
+\bibitem{b2} J. Clerk Maxwell, A Treatise on Electricity and Magnetism, 3rd ed., vol. 2. Oxford: Clarendon, 1892, pp.68--73.
+\bibitem{b3} I. S. Jacobs and C. P. Bean, ``Fine particles, thin films and exchange anisotropy,'' in Magnetism, vol. III, G. T. Rado and H. Suhl, Eds. New York: Academic, 1963, pp. 271--350.
+\bibitem{b4} K. Elissa, ``Title of paper if known,'' unpublished.
+\bibitem{b5} R. Nicole, ``Title of paper with only first word capitalized,'' J. Name Stand. Abbrev., in press.
+\bibitem{b6} Y. Yorozu, M. Hirano, K. Oka, and Y. Tagawa, ``Electron spectroscopy studies on magneto-optical media and plastic substrate interface,'' IEEE Transl. J. Magn. Japan, vol. 2, pp. 740--741, August 1987 [Digests 9th Annual Conf. Magnetics Japan, p. 301, 1982].
+\bibitem{b7} M. Young, The Technical Writer's Handbook. Mill Valley, CA: University Science, 1989.
 \end{thebibliography}
+\vspace{12pt}
+\color{red}
+IEEE conference templates contain guidance text for composing and formatting conference papers. Please ensure that all template text is removed from your conference paper prior to submission to the conference. Failure to remove the template text from your paper may result in your paper not being published.
+
 \end{document}
