@@ -134,7 +134,7 @@ We utilize a multi-stage decomposition strategy designed to preserve document st
 \begin{enumerate}[leftmargin=*]
     \item \textbf{Page Rendering}: \texttt{pdf2image} (wrapping Poppler) converts PDF pages into high-resolution images (300 DPI). This ensures that even vector graphics are captured accurately.
     
-    \item \textbf{Layout Analysis}: We employ YOLOv12 for high precision layout detection. The model is fine-tuned to detect specific document elements, classifying regions into:
+    \item \textbf{Layout Analysis}: We employ YOLOv11 for high precision layout detection. The model is fine-tuned to detect specific document elements, classifying regions into:
     \begin{itemize}
         \item UncategorizedText
         \item PageNumber
@@ -163,7 +163,7 @@ We utilize a multi-stage decomposition strategy designed to preserve document st
 Images detected within the PDF are not merely saved. A sophisticated filtering logic applies to eliminate noise:
 \begin{equation}
 Keep(I) = \begin{cases} 
-1 & \text{if } Area(I) > \theta_{area} \land Aspect(I) \in [\phi_{min}, \phi_{max}] \\
+1 & \ A(I) > \theta_{area} \land Aspect(I) \in [\phi_{min}, \phi_{max}] \\
 0 & \text{otherwise}
 \end{cases}
 \end{equation}
@@ -183,26 +183,26 @@ Their local paths are swapped for public URLs in the metadata, ensuring the fron
 \begin{figure*}[htbp]
     \centering
     \includegraphics[width=\textwidth]{1.png}
-    \caption{ChunkSmith System Architecture. The pipeline consists of three main stages: Ingestion (PDF processing and Layout Analysis via YOLOv12), Semantic Enrichment (utilizing Multimodal LLMs for deep understanding), and Retrieval (leveraging Vector Database for similarity search). The asynchronous scheduler ensures high throughput by rotating API keys.}
+    \caption{ChunkSmith System Architecture. The pipeline consists of three main stages: Ingestion (PDF processing and Layout Analysis via YOLOv11), Semantic Enrichment (utilizing Multimodal LLMs for deep understanding), and Retrieval (leveraging Vector Database for similarity search). The asynchronous scheduler ensures high throughput by rotating API keys.}
     \label{fig:arch}
 \end{figure*}
 \subsection{Structured Semantic Enrichment}
 This is the system's primary innovation. Raw text extraction from a complex chart is often gibberish. Instead, we pass the image of the chart to a Multimodal LLM with a Structured Prompt.
 \subsubsection{The AIParser Schema}
 We define a Pydantic model that enforces strict output structure:
-\begin{lstlisting}[language=Python, caption=AIParser Schema Definition]
+\begin{lstlisting}[language=Python, caption=AIParser Schema Definition, numbers=none]
 class AIParser(BaseModel):
     question: str = Field(
         description="List all potential questions that can be answered from this content"
     )
-    summary: str = Field(
-        description="Comprehensive summary of all data and information"
+    ai_title: str = Field(
+        description="Give a suitable title for the content"
     )
     image_interpretation: List[str] = Field(
         description="Detailed analysis of each image"
     )
-    table_interpretation: List[str] = Field(
-        description="Row-column analysis of each table"
+    table_title: List[str] = Field(
+        description="Give a suitable title for the table"
     )
 \end{lstlisting}
 This schema is passed to the MLLM using structured output features (e.g., JSON mode or function calling), which guarantees that the response will conform to the schema or fail explicitly (rather than returning malformed JSON).
@@ -214,7 +214,7 @@ The prompt (shown in full in Listing \ref{lst:prompt}) employs several advanced 
     \item \textbf{Findability Optimization}: Instructing the model to prioritize searchability over brevity
     \item \textbf{Vocabulary Preservation}: Requesting that the model use words similar to the original content
 \end{itemize}
-\begin{lstlisting}[language=Python, caption=The Semantic Enrichment Prompt, label=lst:prompt]
+\begin{lstlisting}[language=Python, caption=The Semantic Enrichment Prompt, label=lst:prompt, basicstyle=\ttfamily\scriptsize\color{black}, keywordstyle=\color{black}, stringstyle=\color{black}, commentstyle=\color{black}, numbers=none]
 prompt_text = f"""You are creating a searchable description for document content retrieval.
 YOUR TASK:
 Generate a comprehensive, searchable description that covers:
@@ -223,18 +223,18 @@ Generate a comprehensive, searchable description that covers:
 3. Questions this content could answer
 4. Visual content analysis (charts, diagrams, patterns in images)
 5. Alternative search terms users might use
-Make it detailed and searchable - prioritize findability over brevity.
+Make it detailed and searchable- prioritize findability over brevity.
 Keep words similar to the original content for better search accuracy.
 STRICT OUTPUT CONSTRAINTS:
 - You received {num_images} images. You MUST return exactly {num_images} items in 'image_interpretation'.
-- You received {num_tables} tables. You MUST return exactly {num_tables} items in 'table_interpretation'.
+- You received {num_tables} tables. You MUST return exactly {num_tables} items in 'table_title'.
 - If {num_images} is 0, 'image_interpretation' MUST be an empty list [].
-- If {num_tables} is 0, 'table_interpretation' MUST be an empty list [].
+- If {num_tables} is 0, 'table_title' MUST be an empty list [].
 IMPORTANT: Return structured output with these fields:
 - question: All potential questions this content answers
-- summary: Comprehensive summary of all information
+- ai_title: Comprehensive title of all information
 - image_interpretation: Detailed analysis of visual elements
-- table_interpretation: Row-column analysis of tabular data
+- table_title: Title of all Row-column of tabular data
 CONTENT TO ANALYZE:
 TEXT CONTENT: {text}
 TABLES: {tables}
@@ -287,17 +287,18 @@ Where:
     \item $T_{table}$ is the table interpretation
 \end{itemize}
 The concatenation operator $\oplus$ represents string concatenation with appropriate delimiters. The final payload stored in the vector database includes:
-\begin{lstlisting}[language=Python, caption=Vector Payload Structure]
+\begin{lstlisting}[language=Python, caption=Vector Payload Structure, numbers=none]
 payload = {
     "chunk_index": int,
     "original_text": str,
-    "ai_summary": str,
+    "ai_title": str,
     "ai_questions": str,
-    "image_paths": List[str],  # URLs
+    "image_paths": List[str], # URLs
     "image_interpretation": List[str],
-    "table_interpretation": List[str],
+    "table_original": List[str],
+    "table_title": List[str],
     "page_numbers": List[int],
-    "content_types": List[str]  # ["text", "image", "table"]
+    "content_types": List[str] # ["text", "image", "table"]
 }
 \end{lstlisting}
 \section{Methodology}
@@ -346,7 +347,7 @@ ChunkSmith is implemented using the following technologies:
     \item \textbf{MLLM Provider}: Multimodal LLM (e.g., Gemini, GPT-4V)
     \item \textbf{Embedding Model}: High-dimensional Text Embedding
     \item \textbf{OCR}: Tesseract 5.0+
-    \item \textbf{Layout Analysis}: YOLOv12
+    \item \textbf{Layout Analysis}: YOLOv11
 \end{itemize}
 \subsection{Configuration Parameters}
 Key configuration parameters and their rationale:
@@ -490,6 +491,8 @@ The system's 92\% recall on visual queries, compared to 8\% for text-only baseli
 As multimodal AI continues to evolve, systems like ChunkSmith will become increasingly important for unlocking the vast amounts of knowledge encoded in visual formats across scientific, financial, and technical domains.
 \bibliographystyle{IEEEtran}
 \begin{thebibliography}{00}
+\footnotesize
+\setlength{\itemsep}{0pt}
 \bibitem{lewis2020retrieval} P. Lewis, et al., ``Retrieval-Augmented Generation for Knowledge-Intensive NLP Tasks,'' in \textit{Proc. NeurIPS}, 2020.
 \bibitem{karpukhin2020dense} V. Karpukhin, et al., ``Dense Passage Retrieval for Open-Domain Question Answering,'' in \textit{Proc. EMNLP}, 2020.
 \bibitem{abootorabi2025ask} M. M. Abootorabi, et al., ``Ask in Any Modality: A Comprehensive Survey on Multimodal Retrieval-Augmented Generation,'' \textit{arXiv preprint arXiv:2502.08826}, 2025.
@@ -502,8 +505,28 @@ As multimodal AI continues to evolve, systems like ChunkSmith will become increa
 \bibitem{vaswani2017attention} A. Vaswani, et al., ``Attention is all you need,'' in \textit{Advances in neural information processing systems}, 2017.
 \bibitem{devlin2018bert} J. Devlin, et al., ``BERT: Pre-training of Deep Bidirectional Transformers for Language Understanding,'' in \textit{Proc. NAACL}, 2019.
 \bibitem{gao2022precise} L. Gao, et al., ``Precise Zero-Shot Dense Retrieval without Relevance Labels,'' in \textit{Proc. ACL}, 2023.
-\bibitem{chen2022murag} J. Chen, et al., ``MuRAG: Multimodal Retrieval-Augmented Generator,'' \textit{arXiv preprint}, 2022.
+\bibitem{chen2022murag} J. Chen, et al., ``MuRAG: Multimodal Retrieval-Augmented Generator,'' \textit{arXiv preprint arXiv:2210.02928}, 2022.
 \bibitem{yasunaga2023retrieval} M. Yasunaga, et al., ``Retrieval-Augmented Multimodal Language Modeling,'' in \textit{Proc. ICML}, 2023.
 \bibitem{liu2023visual} H. Liu, et al., ``Visual Instruction Tuning,'' in \textit{Proc. NeurIPS}, 2023.
+\bibitem{hybridrag2025}
+``Hybrid RAG-empowered Multi-modal LLM for Secure Data Management,'' \textit{arXiv preprint arXiv:2407.00978}, 2024.
+\bibitem{msier2025}
+``MSIER: Textual Effects on Multimodal In-Context Retrieval,'' \textit{arXiv preprint arXiv:2404.12866}, 2024.
+\bibitem{rule2025}
+P. Xia et al., ``RULE: Reliable Multimodal RAG for Factuality in Medical Vision Language Models,'' \textit{arXiv preprint arXiv:2407.05131}, 2024.
+\bibitem{m2raap2025}
+``M2-RAAP: A Multi-Modal Recipe for Advancing Adaptation-based Pre-training,'' \textit{arXiv preprint arXiv:2401.17688}, 2024.
+\bibitem{ramm2025}
+``RAMM: Retrieval-Augmented Biomedical VQA,'' \textit{arXiv preprint arXiv:2303.00534}, 2023.
+\bibitem{alzheimer2024}
+Lai et al., ``AlzheimerRAG: Multimodal Retrieval Augmented Generation for PubMed articles,'' \textit{arXiv preprint arXiv:2412.16701}, 2024.
+\bibitem{chen2025unified}
+Chen et al., ``Multimodal Retrieval-Augmented Generation: Unified Information Processing Across Text, Image, Table, and Video,'' in \textit{Proc. MAGMaR}, 2025.
+\bibitem{marag2025}
+Nguyen, T., Chin, P., and Tai, Y.-W., ``MA-RAG: Multi-Agent Retrieval-Augmented Generation via Collaborative Chain-of-Thought Reasoning,'' \textit{arXiv preprint arXiv:2505.20096}, 2025.
+\bibitem{mmedrag2025}
+P. Xia et al., ``MMed-RAG: Versatile Multimodal RAG System for Medical Vision-Language Models,'' \textit{OpenReview}, 2025.
+\bibitem{wikillava2024}
+Caffagni et al., ``Wiki-LLaVA: Hierarchical Retrieval-Augmented Generation for Multimodal LLMs,'' \textit{arXiv preprint arXiv:2404.15406}, 2024.
 \end{thebibliography}
 \end{document}
