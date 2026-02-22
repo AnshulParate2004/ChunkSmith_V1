@@ -3,6 +3,7 @@ from fastapi import APIRouter
 from config.settings import settings
 from core.document_parser import DocumentParser
 from api.shared import processing_status, chat_agents
+from utils.health_monitor import get_monitor_stats
 
 router = APIRouter(tags=["System"])
 
@@ -17,6 +18,15 @@ async def health_check():
         "active_processing": len(processing_status),
         "active_chat_sessions": len(chat_agents),
         "projects_count": len(settings.list_projects())
+    }
+
+
+@router.get("/health/monitor-stats")
+async def get_health_monitor_stats():
+    """Get health monitor statistics"""
+    return {
+        "success": True,
+        "monitor_stats": get_monitor_stats()
     }
 
 

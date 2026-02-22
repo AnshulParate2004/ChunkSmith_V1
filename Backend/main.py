@@ -3,9 +3,11 @@ from fastapi.middleware.cors import CORSMiddleware
 from api.routes import router
 from config.settings import settings
 from config.logging_config import configure_logging
+from utils.health_monitor import health_monitor_loop
 from dotenv import load_dotenv
 import platform
 import os
+import asyncio
 
 # Configure logging (suppress verbose retry logs)
 configure_logging()
@@ -43,6 +45,14 @@ app.add_middleware(
 app.include_router(router, prefix="/api", tags=["documents"])
 
 # Conversation routes are now included in api.routes
+
+# -------------------------------
+# Background Health Monitor
+# -------------------------------
+@app.on_event("startup")
+async def startup_event():
+    """Start background health monitor when API starts"""
+    asyncio.create_task(health_monitor_loop())
 
 # -------------------------------
 # Root Endpoint
