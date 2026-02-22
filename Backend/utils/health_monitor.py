@@ -4,13 +4,10 @@ import asyncio
 from datetime import datetime
 from typing import Optional, Dict, Any, Tuple
 import logging
+import os
+from config.settings import settings
 
 logger = logging.getLogger(__name__)
-
-# Configuration
-HEALTH_ENDPOINT = "http://localhost:8000/api/health"
-CHECK_INTERVAL = 180  # 3 minutes in seconds
-TIMEOUT = 10  # Request timeout in seconds
 
 # Statistics
 check_count = 0
@@ -29,6 +26,25 @@ def log_message(message: str, level: str = "INFO"):
         logger.info(log_msg)
     else:
         logger.info(log_msg)
+
+
+def get_health_endpoint() -> str:
+    """
+    Get health endpoint URL - hardcoded Render URL
+    This allows the system to ping itself through the external URL, 
+    which Render counts as external traffic (prevents sleeping)
+    """
+    # Hardcoded Render URL - always use this
+    endpoint = "https://chunksmith.onrender.com/api/health"
+    log_message(f"Using hardcoded Render URL: {endpoint}", "INFO")
+    log_message("This will ping the external URL to prevent Render from sleeping", "INFO")
+    return endpoint
+
+
+# Configuration
+HEALTH_ENDPOINT = get_health_endpoint()
+CHECK_INTERVAL = 180  # 3 minutes in seconds
+TIMEOUT = 10  # Request timeout in seconds
 
 
 async def check_health() -> Tuple[bool, Optional[Dict[str, Any]]]:
@@ -65,6 +81,25 @@ async def health_monitor_loop():
     log_message("Health monitor started", "INFO")
     log_message(f"Monitoring: {HEALTH_ENDPOINT}", "INFO")
     log_message(f"Check interval: {CHECK_INTERVAL} seconds (3 minutes)", "INFO")
+    
+    # Info about Render deployment
+    is_using_external = not ("localhost" in HEALTH_ENDPOINT or "127.0.0.1" in HEALTH_ENDPOINT)
+    is_render = os.getenv("RENDER") == "true" or os.getenv("RENDER_SERVICE_NAME")
+    
+    if is_render and is_using_external:
+        log_message(
+            "✓ Using external Render URL - requests will count as external traffic "
+            "and help prevent the service from sleeping",
+            "SUCCESS"
+        )
+    elif is_render and not is_using_external:
+        log_message(
+            "⚠️  WARNING: On Render but using localhost - this will NOT prevent sleeping! "
+            "Set EXTERNAL_API_URL or RENDER_EXTERNAL_URL environment variable.",
+            "ERROR"
+        )
+    elif not is_render and "localhost" in HEALTH_ENDPOINT:
+        log_message("Running locally - using localhost for health checks", "INFO")
     
     while True:
         try:

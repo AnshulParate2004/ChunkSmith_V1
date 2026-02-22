@@ -28,6 +28,7 @@ class Settings(BaseSettings):
     ALLOWED_EXTENSIONS: set = {".pdf"}
     MAX_FILE_SIZE: int = 50 * 1024 * 1024  # 50 MB
     UNSTRUCTURED_API_KEY: str = ""  # Unstructured API key (loaded from env)
+    EXTERNAL_API_URL: str = ""  # External API URL for health checks (e.g., https://your-app.onrender.com)
 
     # Qdrant Settings
     QDRANT_URL: str = ""

@@ -1,5 +1,6 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from contextlib import asynccontextmanager
 from api.routes import router
 from config.settings import settings
 from config.logging_config import configure_logging
@@ -20,12 +21,24 @@ configure_logging()
 load_dotenv()
 
 # -------------------------------
+# Lifespan Event Handlers
+# -------------------------------
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Lifespan context manager for startup and shutdown events"""
+    # Startup
+    asyncio.create_task(health_monitor_loop())
+    yield
+    # Shutdown (if needed in future)
+
+# -------------------------------
 # Initialize FastAPI App
 # -------------------------------
 app = FastAPI(
     title=settings.API_TITLE,
     version=settings.API_VERSION,
-    description="Multimodal RAG API for PDF processing with AI-enhanced summaries and vector search"
+    description="Multimodal RAG API for PDF processing with AI-enhanced summaries and vector search",
+    lifespan=lifespan
 )
 
 # -------------------------------
@@ -45,14 +58,6 @@ app.add_middleware(
 app.include_router(router, prefix="/api", tags=["documents"])
 
 # Conversation routes are now included in api.routes
-
-# -------------------------------
-# Background Health Monitor
-# -------------------------------
-@app.on_event("startup")
-async def startup_event():
-    """Start background health monitor when API starts"""
-    asyncio.create_task(health_monitor_loop())
 
 # -------------------------------
 # Root Endpoint
