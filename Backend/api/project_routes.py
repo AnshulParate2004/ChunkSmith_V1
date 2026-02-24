@@ -163,7 +163,7 @@ async def get_project_details(project_id: str, user = Depends(get_current_user))
         doc_count = 0
         has_vector_store = False
         try:
-           vector_manager = VectorStoreManager(embedding_model=settings.EMBEDDING_MODEL)
+           vector_manager = VectorStoreManager(embedding_model=settings.AZURE_OPENAI_EMBEDDING_MODEL)
            doc_count = vector_manager.get_project_document_count(project_id)
            has_vector_store = doc_count > 0
         except Exception as ve:
@@ -207,7 +207,7 @@ async def delete_project(project_id: str, user = Depends(get_current_user)):
             
         # 2. Supabase Vector Cleanup
         try:
-            vector_manager = VectorStoreManager(embedding_model=settings.EMBEDDING_MODEL)
+            vector_manager = VectorStoreManager(embedding_model=settings.AZURE_OPENAI_EMBEDDING_MODEL)
             vector_manager.delete_project_vectors(project_id)
         except Exception as ve:
              print(f"Vector cleanup error: {ve}")

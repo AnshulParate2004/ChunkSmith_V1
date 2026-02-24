@@ -68,7 +68,7 @@ async def send_sse_message(message_type: str, data: dict) -> str:
 async def search_documents(request: SearchRequest, user = Depends(get_current_user)):
     """Search documents within a specific project"""
     try:
-        vector_manager = VectorStoreManager(embedding_model=settings.EMBEDDING_MODEL)
+        vector_manager = VectorStoreManager(embedding_model=settings.AZURE_OPENAI_EMBEDDING_MODEL)
         vectorstore = vector_manager.load_vector_store(
             persist_directory=None,
             collection_name=request.project_id

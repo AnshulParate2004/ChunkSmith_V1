@@ -600,7 +600,7 @@ async def process_pdf_background(
         # We need to ensure ContentProcessor handles paths correctly for Supabase upload
         processor = ContentProcessor(
             image_dir=str(image_dir), 
-            model_name=settings.GEMINI_MODEL, 
+            model_name=settings.AZURE_OPENAI_CHAT_MODEL, 
             temperature=settings.TEMPERATURE,
             project_id=project_id
         )
@@ -651,7 +651,7 @@ async def process_pdf_background(
             "message": f"Step 5: Loading {len(langchain_documents)} chunks into Vector Store ({project_id})..."
         })
         
-        vector_manager = VectorStoreManager(embedding_model=settings.EMBEDDING_MODEL)
+        vector_manager = VectorStoreManager(embedding_model=settings.AZURE_OPENAI_EMBEDDING_MODEL)
         
         # Add to project-specific collection
         vector_manager.create_vector_store(

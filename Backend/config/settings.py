@@ -17,10 +17,15 @@ class Settings(BaseSettings):
     LANGUAGES: list = ["eng"]
     SPLIT_PDF_CONCURRENCY_LEVEL: int = 15  # Concurrency level for PDF splitting
     
-    # AI Model settings
-    GEMINI_MODEL: str = "gemini-2.5-flash"
-    EMBEDDING_MODEL: str = "models/gemini-embedding-001"
+    # AI Model settings - Azure OpenAI
+    AZURE_OPENAI_CHAT_MODEL: str = "gpt-4o"  # Azure OpenAI chat model deployment name
+    AZURE_OPENAI_EMBEDDING_MODEL: str = "text-embedding-3-large"  # Azure OpenAI embedding model deployment name
     TEMPERATURE: float = 0.0
+    
+    # Azure OpenAI Settings
+    AZURE_OPENAI_API_KEY: str = ""  # Azure OpenAI API key (loaded from env)
+    AZURE_OPENAI_ENDPOINT: str = ""  # Azure OpenAI endpoint URL (loaded from env)
+    AZURE_OPENAI_API_VERSION: str = "2024-02-15-preview"  # Azure OpenAI API version
     
     # API settings
     API_TITLE: str = "MultiModal RAG API"

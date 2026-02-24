@@ -3,7 +3,7 @@ import json
 from pathlib import Path
 from typing import List, Dict, AsyncGenerator, Optional, Union
 from langchain_core.messages import HumanMessage, AIMessage, SystemMessage
-from langchain_google_genai import ChatGoogleGenerativeAI
+from langchain_openai import ChatOpenAI
 from supabase import create_client
 from utils.vector_store import VectorStoreManager
 from config.settings import settings
@@ -51,25 +51,27 @@ class ChatAgent:
         else:
              self.supabase = None
         
-        # Load API keys and select one
-        import random
-        self.api_keys = self._load_api_keys()
-        if not self.api_keys:
-            print("WARNING: No GOOGLE_API_KEY found in environment for ChatAgent")
-            self.api_key = os.getenv("GOOGLE_API_KEY") # Fallback
-        else:
-            self.api_key = random.choice(self.api_keys)
+        # Load Azure OpenAI configuration
+        self.azure_api_key = settings.AZURE_OPENAI_API_KEY or os.getenv("AZURE_OPENAI_API_KEY")
+        self.azure_endpoint = settings.AZURE_OPENAI_ENDPOINT or os.getenv("AZURE_OPENAI_ENDPOINT")
+        self.azure_api_version = settings.AZURE_OPENAI_API_VERSION
+        
+        if not self.azure_api_key or not self.azure_endpoint:
+            raise ValueError("AZURE_OPENAI_API_KEY and AZURE_OPENAI_ENDPOINT must be set in environment")
             
-        print(f"ChatAgent initialized with API Key ending in ...{self.api_key[-4:] if self.api_key else 'None'}")
+        print(f"ChatAgent initialized with Azure OpenAI endpoint: {self.azure_endpoint}")
 
         # Initialize shown images tracking
         self.shown_images = set()
 
-        # Initialize base LLM for structured output
-        self.structured_llm = ChatGoogleGenerativeAI(
-            model=settings.GEMINI_MODEL,
+        # Initialize base LLM for structured output using Azure OpenAI
+        self.structured_llm = ChatOpenAI(
+            model=settings.AZURE_OPENAI_CHAT_MODEL,
             temperature=0.2,
-            google_api_key=self.api_key
+            azure_endpoint=self.azure_endpoint,
+            azure_deployment=settings.AZURE_OPENAI_CHAT_MODEL,
+            api_key=self.azure_api_key,
+            api_version=self.azure_api_version
         ).with_structured_output(ChatResponse)
 
         # Set paths
@@ -77,7 +79,7 @@ class ChatAgent:
         
         # Load vector store (Supabase/Qdrant)
         try:
-            self.vector_manager = VectorStoreManager(embedding_model=settings.EMBEDDING_MODEL)
+            self.vector_manager = VectorStoreManager(embedding_model=settings.AZURE_OPENAI_EMBEDDING_MODEL)
             self.vectorstore = self.vector_manager.load_vector_store(
                 collection_name=project_id
             )
@@ -114,21 +116,6 @@ CONVERSATION HISTORY:
 
 Answer the user's question based on the context and conversation history."""
 
-    def _load_api_keys(self) -> List[str]:
-        """Load all available Google API keys from environment"""
-        api_keys = []
-        # Try to load numbered API keys (1-12 based on .env)
-        for i in range(1, 15):
-            key = os.getenv(f"GOOGLE_API_KEY_{i}")
-            if key and key.strip():
-                api_keys.append(key.strip())
-        
-        # Also check default key
-        default_key = os.getenv("GOOGLE_API_KEY")
-        if default_key and default_key.strip() and default_key.strip() not in api_keys:
-            api_keys.append(default_key.strip())
-            
-        return api_keys
 
     def _get_history(self) -> List[HumanMessage | AIMessage]:
         """Fetch conversation history from Supabase"""

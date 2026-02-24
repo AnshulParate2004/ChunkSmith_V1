@@ -5,7 +5,7 @@ import asyncio
 from pathlib import Path
 from typing import List, Dict, Optional
 from langchain_core.documents import Document
-from langchain_google_genai import ChatGoogleGenerativeAI
+from langchain_openai import ChatOpenAI
 from langchain_core.messages import HumanMessage
 from pydantic import BaseModel, Field
 from utils.storage import StorageManager
@@ -24,68 +24,43 @@ class AIParser(BaseModel):
 class ContentProcessor:
     """Processes document chunks with AI-enhanced summaries using multiple API keys"""
     
-    def __init__(self, image_dir: str, model_name: str = "gemini-2.5-pro", temperature: float = 0, project_id: str = None):
+    def __init__(self, image_dir: str, model_name: str = None, temperature: float = 0, project_id: str = None):
+        from config.settings import settings
+        
         self.image_dir = image_dir
-        self.model_name = model_name
+        self.model_name = model_name or settings.AZURE_OPENAI_CHAT_MODEL
         self.temperature = temperature
         self.project_id = project_id
 
-
-        # Load all available API keys from environment
-        self.api_keys = self._load_api_keys()
+        # Load Azure OpenAI configuration
+        self.azure_api_key = settings.AZURE_OPENAI_API_KEY or os.getenv("AZURE_OPENAI_API_KEY")
+        self.azure_endpoint = settings.AZURE_OPENAI_ENDPOINT or os.getenv("AZURE_OPENAI_ENDPOINT")
+        self.azure_api_version = settings.AZURE_OPENAI_API_VERSION
         
-        if not self.api_keys:
-            raise ValueError("No GOOGLE_API_KEY found in environment")
-        
-        # print(f"Initialized ContentProcessor with {len(self.api_keys)} API keys")
-        # print(f"Model: {model_name}")
+        if not self.azure_api_key or not self.azure_endpoint:
+            raise ValueError("AZURE_OPENAI_API_KEY and AZURE_OPENAI_ENDPOINT must be set in environment")
         
         Path(image_dir).mkdir(parents=True, exist_ok=True)
     
-    def _load_api_keys(self) -> List[str]:
+    def _get_llm_for_key(self, api_key: str = None):
         """
-        Load all available Google API keys from environment
-        Looks for GOOGLE_API_KEY_1 through GOOGLE_API_KEY_n
-        Falls back to GOOGLE_API_KEY if numbered keys not found
-        
-        Returns:
-            List of API keys
-        """
-        api_keys = []
-        
-        # Try to load numbered API keys (1-10)
-        for i in range(1, 8):
-            key = os.getenv(f"GOOGLE_API_KEY_{i}")
-            if key and key.strip():
-                api_keys.append(key.strip())
-                # print(f"DEBUG: Loaded GOOGLE_API_KEY_{i}")
-        
-        # Fallback to single GOOGLE_API_KEY if no numbered keys found
-        if not api_keys:
-            single_key = os.getenv("GOOGLE_API_KEY")
-            if single_key and single_key.strip():
-                api_keys.append(single_key.strip())
-                # print(f"DEBUG: Loaded GOOGLE_API_KEY (fallback)")
-            else:
-                print(f"DEBUG: No GOOGLE_API_KEY found in environment!")
-                # print(f"DEBUG: Available env vars: {[k for k in os.environ.keys() if 'GOOGLE' in k]}")
-        
-        return api_keys
-    
-    def _get_llm_for_key(self, api_key: str):
-        """
-        Create LLM instance for specific API key
+        Create LLM instance for Azure OpenAI
         
         Args:
-            api_key: Google API key
+            api_key: Azure API key (optional, uses instance key if not provided)
             
         Returns:
             LLM instance with structured output
         """
-        llm = ChatGoogleGenerativeAI(
+        from config.settings import settings
+        
+        llm = ChatOpenAI(
             model=self.model_name,
             temperature=self.temperature,
-            google_api_key=api_key
+            azure_endpoint=self.azure_endpoint,
+            azure_deployment=self.model_name,
+            api_key=api_key or self.azure_api_key,
+            api_version=self.azure_api_version
         )
         return llm.with_structured_output(AIParser)
 
@@ -256,12 +231,11 @@ TEXT CONTENT:
             
             message = HumanMessage(content=message_content)
             
-            # Get LLM for this specific API key
+            # Get LLM instance
             llm_structured = self._get_llm_for_key(api_key)
             
             # Make async API call
-            key_id = self.api_keys.index(api_key) + 1
-            print(f"  > [AI] Chunk {chunk_index}: Sending to API (Key #{key_id})...")
+            print(f"  > [AI] Chunk {chunk_index}: Sending to Azure OpenAI...")
             response = await llm_structured.ainvoke([message])
             print(f"  > [AI] Chunk {chunk_index}: Success.")
             
@@ -274,7 +248,7 @@ TEXT CONTENT:
     
     async def process_chunks_async(self, chunks_data: List[Dict]) -> List[Optional[AIParser]]:
         """
-        Process multiple chunks asynchronously using different API keys
+        Process multiple chunks asynchronously using Azure OpenAI
         
         Args:
             chunks_data: List of dictionaries containing chunk data
@@ -284,17 +258,13 @@ TEXT CONTENT:
         """
         tasks = []
         
-        # Create async tasks for each chunk with corresponding API key
+        # Create async tasks for each chunk
         for i, chunk_data in enumerate(chunks_data):
-            # Use modulo to cycle through API keys if we have more chunks than keys
-            api_key_index = i % len(self.api_keys)
-            api_key = self.api_keys[api_key_index]
-            
             task = self.create_ai_enhanced_summary_async(
                 text=chunk_data['text'],
                 tables=chunk_data['tables'],
                 images=chunk_data['image_base64'],
-                api_key=api_key,
+                api_key=None,  # Uses instance API key
                 chunk_index=i + 1
             )
             tasks.append(task)
@@ -316,7 +286,7 @@ TEXT CONTENT:
         Returns:
             List of LangChain Documents with enhanced summaries
         """
-        print(f"\n=== [AI PROCESSING START] Processing {len(chunks)} chunks with {len(self.api_keys)} API keys ===")
+        print(f"\n=== [AI PROCESSING START] Processing {len(chunks)} chunks with Azure OpenAI ===")
         
         # No longer cleaning - project-based structure keeps data isolated
         

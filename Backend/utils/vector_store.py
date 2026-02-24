@@ -1,9 +1,10 @@
 """Vector store operations using Qdrant (Cloud Native)"""
 import json
 import logging
+import os
 from typing import List, Optional
 from langchain_core.documents import Document
-from langchain_google_genai import GoogleGenerativeAIEmbeddings
+from langchain_openai import AzureOpenAIEmbeddings
 from langchain_qdrant import QdrantVectorStore
 from qdrant_client import QdrantClient
 from qdrant_client.http import models as rest
@@ -17,8 +18,21 @@ class VectorStoreManager:
     """Manages Qdrant vector store operations"""
     
     def __init__(self, embedding_model: str):
-        # Initialize Google Embeddings
-        self.embedding_model = GoogleGenerativeAIEmbeddings(model=embedding_model)
+        # Initialize Azure OpenAI Embeddings
+        azure_api_key = settings.AZURE_OPENAI_API_KEY or os.getenv("AZURE_OPENAI_API_KEY")
+        azure_endpoint = settings.AZURE_OPENAI_ENDPOINT or os.getenv("AZURE_OPENAI_ENDPOINT")
+        azure_api_version = settings.AZURE_OPENAI_API_VERSION
+        
+        if not azure_api_key or not azure_endpoint:
+            raise ValueError("AZURE_OPENAI_API_KEY and AZURE_OPENAI_ENDPOINT must be set for embeddings")
+        
+        self.embedding_model = AzureOpenAIEmbeddings(
+            model=embedding_model,
+            azure_endpoint=azure_endpoint,
+            azure_deployment=embedding_model,
+            api_key=azure_api_key,
+            api_version=azure_api_version
+        )
         
         # Initialize Qdrant Client
         # Note: Port 6333 is standard, user url included it.
@@ -64,8 +78,9 @@ class VectorStoreManager:
                 doc.metadata["content_types"] = json.dumps(doc.metadata["content_types"])
         
         # Ensure collection exists
-        # gemini-embedding-001 has 3072 dimensions
-        # Ensure collection exists and has correct dimensions (3072 for text-embedding-3-large/004)
+        # Azure OpenAI text-embedding-3-large has 3072 dimensions
+        # Azure OpenAI text-embedding-3-small has 1536 dimensions
+        # Determine dimensions based on model name
         try:
             collection_info = self.client.get_collection(collection_name)
             
@@ -75,16 +90,22 @@ class VectorStoreManager:
             # Handle directly accessed size attribute (common in single vector setup)
             current_size = getattr(current_vector_config, 'size', None)
             
-            if current_size and current_size != 3072:
-                # print(f"Format mismatch: Collection {collection_name} has dimension {current_size}, expected 3072. Recreating...")
+            # Determine expected dimension based on model
+            # text-embedding-3-large = 3072, text-embedding-3-small = 1536
+            expected_size = 3072 if "large" in self.embedding_model.model.lower() else 1536
+            
+            if current_size and current_size != expected_size:
+                # print(f"Format mismatch: Collection {collection_name} has dimension {current_size}, expected {expected_size}. Recreating...")
                 self.client.delete_collection(collection_name)
                 raise Exception("Collection deleted due to dimension mismatch, triggering recreation")
                 
         except Exception:
              # logger.info(f"Creating new Qdrant collection: {collection_name}")
+             # Determine dimension based on model
+             expected_size = 3072 if "large" in self.embedding_model.model.lower() else 1536
              self.client.create_collection(
                  collection_name=collection_name,
-                 vectors_config=rest.VectorParams(size=3072, distance=rest.Distance.COSINE)
+                 vectors_config=rest.VectorParams(size=expected_size, distance=rest.Distance.COSINE)
              )
         
         # Add documents via LangChain Qdrant wrapper
