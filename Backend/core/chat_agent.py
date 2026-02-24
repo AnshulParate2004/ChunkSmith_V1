@@ -3,7 +3,7 @@ import json
 from pathlib import Path
 from typing import List, Dict, AsyncGenerator, Optional, Union
 from langchain_core.messages import HumanMessage, AIMessage, SystemMessage
-from langchain_openai import ChatOpenAI
+from langchain_openai import AzureChatOpenAI
 from supabase import create_client
 from utils.vector_store import VectorStoreManager
 from config.settings import settings
@@ -65,13 +65,12 @@ class ChatAgent:
         self.shown_images = set()
 
         # Initialize base LLM for structured output using Azure OpenAI
-        self.structured_llm = ChatOpenAI(
-            model=settings.AZURE_OPENAI_CHAT_MODEL,
-            temperature=0.2,
+        self.structured_llm = AzureChatOpenAI(
             azure_endpoint=self.azure_endpoint,
-            azure_deployment=settings.AZURE_OPENAI_CHAT_MODEL,
             api_key=self.azure_api_key,
-            api_version=self.azure_api_version
+            azure_deployment=settings.AZURE_OPENAI_CHAT_MODEL,
+            api_version=self.azure_api_version,
+            temperature=0.2,
         ).with_structured_output(ChatResponse)
 
         # Set paths

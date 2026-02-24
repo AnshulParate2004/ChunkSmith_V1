@@ -349,18 +349,23 @@ async def view_processed_chunks(
             
             for chunk in chunks_data:
                 # 1. Resolve Text Content
-                # New standard: enhanced_content. Legacy: page_content, text.
-                primary_text = chunk.get('enhanced_content') or chunk.get('page_content') or chunk.get('text') or ""
-                
-                # Fallback to metadata if nested (legacy structure)
-                if not primary_text and 'metadata' in chunk:
-                    primary_text = chunk['metadata'].get('original_text', "")
+                # We want the frontend to show ONLY the original raw text,
+                # not the combined QUESTIONS/SUMMARY/... string.
+
+                # Prefer explicit original_text (top-level or inside metadata)
+                raw_original = chunk.get("original_text")
+                if not raw_original and isinstance(chunk.get("metadata"), dict):
+                    raw_original = chunk["metadata"].get("original_text")
+
+                # If no explicit original text is available, fall back to previous fields
+                primary_text = raw_original or chunk.get("enhanced_content") or chunk.get("page_content") or chunk.get("text") or ""
 
                 # Set ALL fields to ensure frontend finds it
-                chunk['text'] = primary_text
-                chunk['content'] = primary_text
-                chunk['page_content'] = primary_text
-                chunk['original_text'] = primary_text # Might overwrite if top-level exists, but primary_text is truth
+                chunk["text"] = primary_text
+                chunk["content"] = primary_text
+                chunk["page_content"] = primary_text
+                # Keep original_text as the true original when we have it
+                chunk["original_text"] = raw_original or primary_text
                 
                 # 2. Flatten Metadata (if nested) for other fields
                 if 'metadata' in chunk and isinstance(chunk['metadata'], dict):

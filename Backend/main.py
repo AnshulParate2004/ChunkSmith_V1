@@ -1,4 +1,4 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 from api.routes import router
@@ -52,12 +52,20 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# -------------------------------
-# Include API Routes
-# -------------------------------
 app.include_router(router, prefix="/api", tags=["documents"])
 
 # Conversation routes are now included in api.routes
+
+# -------------------------------
+# Simple request logging middleware
+# -------------------------------
+@app.middleware("http")
+async def log_requests(request: Request, call_next):
+    """Log all incoming HTTP requests and their responses."""
+    print(f"[REQUEST] {request.method} {request.url.path}", flush=True)
+    response = await call_next(request)
+    print(f"[RESPONSE] {request.method} {request.url.path} -> {response.status_code}", flush=True)
+    return response
 
 # -------------------------------
 # Root Endpoint
@@ -82,4 +90,5 @@ async def root():
 # -------------------------------
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)
+    # Disable reload so request logs and prints appear in this same process/terminal
+    uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=False)

@@ -5,7 +5,7 @@ import asyncio
 from pathlib import Path
 from typing import List, Dict, Optional
 from langchain_core.documents import Document
-from langchain_openai import ChatOpenAI
+from langchain_openai import AzureChatOpenAI
 from langchain_core.messages import HumanMessage
 from pydantic import BaseModel, Field
 from utils.storage import StorageManager
@@ -53,14 +53,14 @@ class ContentProcessor:
             LLM instance with structured output
         """
         from config.settings import settings
-        
-        llm = ChatOpenAI(
-            model=self.model_name,
-            temperature=self.temperature,
+
+        # Use AzureChatOpenAI with Azure-specific parameters
+        llm = AzureChatOpenAI(
             azure_endpoint=self.azure_endpoint,
-            azure_deployment=self.model_name,
             api_key=api_key or self.azure_api_key,
-            api_version=self.azure_api_version
+            azure_deployment=self.model_name,
+            api_version=self.azure_api_version,
+            temperature=self.temperature,
         )
         return llm.with_structured_output(AIParser)
 

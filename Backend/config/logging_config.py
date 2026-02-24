@@ -3,23 +3,17 @@ import logging
 import sys
 
 def configure_logging():
-    """Configure logging to suppress verbose retry messages"""
-    
-    # Set root logger to WARNING to suppress INFO/DEBUG from libraries
+    """Configure logging to show only FastAPI/uvicorn logs."""
+    # Root: warnings and above for all libraries
     logging.basicConfig(
         level=logging.WARNING,
-        format='%(levelname)s: %(message)s',
-        stream=sys.stdout
+        format="%(levelname)s [%(name)s] %(message)s",
+        stream=sys.stdout,
     )
-    
-    # Suppress specific verbose loggers
-    logging.getLogger("google.api_core.retry").setLevel(logging.ERROR)
-    logging.getLogger("google.genai._api_client").setLevel(logging.ERROR)
-    logging.getLogger("httpx").setLevel(logging.WARNING)
-    logging.getLogger("httpcore").setLevel(logging.WARNING)
-    
-    # Keep our app logs visible
-    app_logger = logging.getLogger("uvicorn")
-    app_logger.setLevel(logging.INFO)
-    
+
+    # FastAPI/uvicorn (server + access) at INFO so you see requests
+    logging.getLogger("uvicorn").setLevel(logging.INFO)
+    logging.getLogger("uvicorn.error").setLevel(logging.INFO)
+    logging.getLogger("uvicorn.access").setLevel(logging.INFO)
+
     return logging.getLogger(__name__)
