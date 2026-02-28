@@ -9,48 +9,41 @@ from fastapi.responses import FileResponse
 from config.settings import settings
 from utils.storage import StorageManager
 from utils.vector_store import VectorStoreManager
+from utils.project_repository import ProjectRepository
 from api.shared import ProjectCreateRequest
-from api.auth_routes import get_current_user
+from api.auth_routes import get_current_user, get_supabase_client
 
 router = APIRouter(prefix="/projects", tags=["Project Management"])
 
 
 @router.post("")
 async def create_project(request: ProjectCreateRequest, user = Depends(get_current_user)):
-    """Create a new project (Virtual/Supabase-backed)"""
+    """Create a new project (PostgreSQL + Supabase storage)."""
     try:
-        # Sanitize project name
         project_id = request.project_name.replace(" ", "_").replace("/", "_").replace("\\", "_")
         
-        # Initialize Supabase Storage
-        storage_mgr = StorageManager()
+        # Insert into PostgreSQL
+        supabase = get_supabase_client()
+        repo = ProjectRepository(supabase)
+        user_id = str(user.id) if hasattr(user, "id") else None
+        repo.create_project(project_id, user_id=user_id)
         
-        # Check if project exists (optional but good practice)
-        # We'll just ensure the folder structure exists by uploading a placeholder
-        # This allows empty projects to be listed and folders to exist in all buckets
+        # Optional: create folder structure in buckets (for storage uploads)
         try:
-             buckets = [
+            storage_mgr = StorageManager()
+            for bucket in [
                 settings.SUPABASE_PDF_BUCKET_NAME,
-                settings.SUPABASE_BUCKET_NAME,      # images
-                settings.SUPABASE_DATA_BUCKET_NAME, # json
-                settings.SUPABASE_PKL_BUCKET_NAME
-             ]
-             
-             for bucket in buckets:
-                 # Upload a hidden .keep file to create the folder structure
-                 storage_mgr.upload_bytes(
-                     b"", 
-                     f"{project_id}/.keep", 
-                     "text/plain", 
-                     bucket
-                 )
+                settings.SUPABASE_BUCKET_NAME,
+                settings.SUPABASE_DATA_BUCKET_NAME,
+                settings.SUPABASE_PKL_BUCKET_NAME,
+            ]:
+                storage_mgr.upload_bytes(b"", f"{project_id}/.keep", "text/plain", bucket)
         except Exception as e:
-            # If upload fails, we still return success but warn log?
-            print(f"Warning: Failed to create placeholder for project {project_id}: {e}")
+            print(f"Warning: Bucket placeholder failed for {project_id}: {e}")
 
         return {
             "success": True,
-            "message": "Project initialized (Cloud backed)",
+            "message": "Project created (PostgreSQL + Cloud backed)",
             "project_id": project_id,
             "storage_path": f"{project_id}/"
         }
@@ -62,113 +55,44 @@ async def create_project(request: ProjectCreateRequest, user = Depends(get_curre
 
 
 @router.get("")
-async def list_projects(
-    user = Depends(get_current_user),):
-    """List all projects (from Supabase)"""
+async def list_projects(user = Depends(get_current_user)):
+    """List all projects from PostgreSQL (excludes soft-deleted)."""
     try:
-        storage_mgr = StorageManager()
-        # List root of pdf bucket to find project folders
-        items = storage_mgr.list_bucket_contents(settings.SUPABASE_PDF_BUCKET_NAME)
-        
-        projects = []
-        # Support for both dictionary and object return types from supabase-py
-        for item in items:
-            name = item.get('name') if isinstance(item, dict) else getattr(item, 'name', None)
-            created_at = item.get('created_at') if isinstance(item, dict) else getattr(item, 'created_at', datetime.now().isoformat())
-            
-            # Filter out obvious non-folders if possible, or just treat root items as projects
-            if name and not name.startswith('.'): 
-                # Count files in this project (excluding hidden files like .keep)
-                project_files = storage_mgr.list_bucket_contents(settings.SUPABASE_PDF_BUCKET_NAME, path=f"{name}/")
-                
-                # Filter out hidden files
-                visible_files = []
-                if project_files:
-                    for f in project_files:
-                        fname = f.get('name') if isinstance(f, dict) else getattr(f, 'name', '')
-                        if fname and not fname.startswith('.'):
-                            visible_files.append(f)
-                
-                file_count = len(visible_files)
-                
-                projects.append({
-                    "project_id": name,
-                    "project_path": f"supabase://{name}",
-                    "file_count": file_count, 
-                    "created_at": created_at
-                })
-        
+        supabase = get_supabase_client()
+        repo = ProjectRepository(supabase)
+        user_id = str(user.id) if hasattr(user, "id") else None
+        projects = repo.list_projects(user_id=user_id)
         return {
             "success": True,
             "count": len(projects),
             "projects": projects
         }
-    
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
 
 @router.get("/{project_id}")
 async def get_project_details(project_id: str, user = Depends(get_current_user)):
-    """Get detailed information about a project (from Supabase)"""
+    """Get detailed information about a project (from PostgreSQL)."""
     try:
-        storage_mgr = StorageManager()
+        supabase = get_supabase_client()
+        repo = ProjectRepository(supabase)
+        doc_rows = repo.get_project_documents(project_id)
         
-        # Fetch PDFs from Supabase
-        pdf_items = storage_mgr.list_bucket_contents(
-            settings.SUPABASE_PDF_BUCKET_NAME, 
-            path=f"{project_id}/"
-        )
+        pdf_files = [
+            {"filename": r["filename"], "size_mb": r["size_mb"], "created_at": r["created_at"], "id": r["id"]}
+            for r in doc_rows
+        ]
+        image_count = sum(r.get("image_count", 0) for r in doc_rows)
         
-        # Fetch Images from Supabase (Correct path: project_id/images/)
-        image_items = storage_mgr.list_bucket_contents(
-            settings.SUPABASE_BUCKET_NAME, 
-            path=f"{project_id}/images/"
-        )
-        
-        # Filter out folder placeholders if any (items ending in / or empty names)
-        pdf_files = []
-        if isinstance(pdf_items, list):
-            for item in pdf_items:
-                name = item.get('name') if isinstance(item, dict) else getattr(item, 'name', None)
-                item_id = item.get('id') if isinstance(item, dict) else getattr(item, 'id', None)
-                
-                # Fetch metadata safely (can be explicitly None even if attribute exists)
-                metadata_raw = item.get('metadata') if isinstance(item, dict) else getattr(item, 'metadata', None)
-                metadata = metadata_raw or {}
-                
-                created_at = item.get('created_at') if isinstance(item, dict) else getattr(item, 'created_at', None)
-                
-                # Handle size which might be in metadata or direct attribute
-                size_raw = metadata.get('size', 0)
-                try:
-                    size_mb = round(float(size_raw) / (1024*1024), 2)
-                except (ValueError, TypeError):
-                    size_mb = 0.0
-                
-                if name and not name.startswith('.'):
-                    pdf_files.append({
-                        "filename": name, 
-                        "size_mb": size_mb,
-                        "created_at": created_at,
-                        "id": item_id
-                    })
-
-        # Filter out folder placeholders if any
-        # Supabase list sometimes returns the folder itself as an item?
-        real_images = [img for img in (image_items or []) if (img.get('name') if isinstance(img, dict) else getattr(img, 'name', '')).lower().endswith(('.png', '.jpg', '.jpeg'))]
-        image_count = len(real_images)
-
-        # Get vector store info and exact count
         doc_count = 0
         has_vector_store = False
         try:
-           vector_manager = VectorStoreManager(embedding_model=settings.AZURE_OPENAI_EMBEDDING_MODEL)
-           doc_count = vector_manager.get_project_document_count(project_id)
-           has_vector_store = doc_count > 0
+            vector_manager = VectorStoreManager(embedding_model=settings.AZURE_OPENAI_EMBEDDING_MODEL)
+            doc_count = vector_manager.get_project_document_count(project_id)
+            has_vector_store = doc_count > 0
         except Exception as ve:
-           print(f"Vector count error for project {project_id}: {ve}")
-           # Don't crash if vector store is unreachable
+            print(f"Vector count error for project {project_id}: {ve}")
         
         return {
             "success": True,
@@ -189,37 +113,26 @@ async def get_project_details(project_id: str, user = Depends(get_current_user))
 
 @router.delete("/{project_id}")
 async def delete_project(project_id: str, user = Depends(get_current_user)):
-    """Delete an entire project and all its data (Supabase + Local)"""
+    """
+    Shadow/soft delete: marks project and documents as deleted in PostgreSQL.
+    Storage buckets and vector store are NOT deleted - data is preserved for recovery.
+    """
     try:
-        # 1. Supabase Storage Cleanup
-        storage_mgr = StorageManager()
-        # List of buckets to clean (PDF, Images, JSON, Pickle)
-        buckets = [
-            settings.SUPABASE_PDF_BUCKET_NAME,
-            settings.SUPABASE_BUCKET_NAME,      # chunk_images
-            settings.SUPABASE_DATA_BUCKET_NAME, # chunk_data
-            settings.SUPABASE_PKL_BUCKET_NAME
-        ]
-        
-        for bucket in buckets:
-            # Delete all files with project prefix
-            storage_mgr.delete_folder(bucket, f"{project_id}/")
-            
-        # 2. Supabase Vector Cleanup
+        # Soft delete in PostgreSQL (projects + documents)
         try:
-            vector_manager = VectorStoreManager(embedding_model=settings.AZURE_OPENAI_EMBEDDING_MODEL)
-            vector_manager.delete_project_vectors(project_id)
-        except Exception as ve:
-             print(f"Vector cleanup error: {ve}")
-
-        # 3. Local Cleanup (Virtual check)
-        project_dir = settings.get_project_dir(project_id)
-        if project_dir.exists():
-            shutil.rmtree(project_dir)
+            supabase = get_supabase_client()
+            repo = ProjectRepository(supabase)
+            repo.soft_delete_project(project_id)
+        except Exception as db_err:
+            print(f"DB soft delete error (tables may not exist yet): {db_err}")
+            raise HTTPException(
+                status_code=500,
+                detail=f"Could not delete project: {str(db_err)}. Ensure projects/documents tables exist."
+            )
         
         return {
             "success": True,
-            "message": f"Project '{project_id}' deleted successfully (Cloud & Local data removed)",
+            "message": f"Project '{project_id}' deleted (soft delete - hidden from listings)",
             "project_id": project_id
         }
     

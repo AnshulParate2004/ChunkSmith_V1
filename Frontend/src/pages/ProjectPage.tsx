@@ -63,12 +63,18 @@ const ProjectPage = () => {
       try {
         const response = await apiService.getProjectDetails(projectId);
         // Map API response to UploadedDoc format
+        const mapStatus = (s?: string): 'processing' | 'complete' | 'error' => {
+          if (s === 'completed') return 'complete';
+          if (s === 'processing' || s === 'queued') return 'processing';
+          if (s === 'failed') return 'error';
+          return 'complete';
+        };
         const docs: UploadedDoc[] = response.pdf_files?.map((pdf: any) => ({
           name: pdf.filename,
-          size: pdf.size_mb * 1024 * 1024, // Convert MB to bytes
-          documentId: pdf.filename.replace('.pdf', ''),
+          size: pdf.size_mb * 1024 * 1024,
+          documentId: pdf.id || pdf.filename?.replace('.pdf', '') || '',
           uploadedAt: pdf.created_at || new Date().toISOString(),
-          status: 'complete' as const,
+          status: mapStatus(pdf.status),
           projectId: projectId
         })) || [];
 

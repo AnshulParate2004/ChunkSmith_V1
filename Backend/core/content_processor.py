@@ -162,7 +162,7 @@ class ContentProcessor:
         images: List[str],
         api_key: str,
         chunk_index: int
-    ) -> Optional[AIParser]:
+    ) -> Optional[Dict]:
         """
         Create AI-enhanced summary asynchronously with specific API key
         
@@ -240,15 +240,15 @@ TEXT CONTENT:
             print(f"  > [AI] Chunk {chunk_index}: Sending to Azure OpenAI...")
             response = await llm_structured.ainvoke([message])
             print(f"  > [AI] Chunk {chunk_index}: Success.")
-            
-            return response
+            # Convert to dict to avoid Pydantic serializer warnings (parsed field)
+            return response.model_dump() if response else None
                 
         except Exception as e:
             # On failure, return None to use raw chunk (no error messages)
             print(f"  > [AI] Chunk {chunk_index}: FAILED ({str(e)}), using raw chunk data")
             return None
     
-    async def process_chunks_async(self, chunks_data: List[Dict]) -> List[Optional[AIParser]]:
+    async def process_chunks_async(self, chunks_data: List[Dict]) -> List[Optional[Dict]]:
         """
         Process multiple chunks asynchronously using Azure OpenAI
         
@@ -386,19 +386,19 @@ TEXT CONTENT:
                 # Create combined searchable content with AI summary
                 # Prepare image analysis text as string with image path and interpretation
                 # For images
+                img_interp = ai_response.get("image_interpretation") or []
+                table_interp = ai_response.get("table_interpretation") or []
                 img_analysis_text = "\n".join(
-                    [f"Image Path {content_data['images_dirpath'][i]} : {ai_response.image_interpretation[i]}" 
-                    for i in range(len(ai_response.image_interpretation))]
-                ) if ai_response.image_interpretation else "No images present"
+                    [f"Image Path {content_data['images_dirpath'][i]} : {img_interp[i]}" 
+                    for i in range(len(img_interp))]
+                ) if img_interp else "No images present"
 
-                # For tables
                 table_analysis_text = "\n".join(
-                    [f"Table index {i} : {ai_response.table_interpretation[i]}"
-                    for i in range(len(ai_response.table_interpretation))]
-                ) if ai_response.table_interpretation else "No tables present"
+                    [f"Table index {i} : {table_interp[i]}" for i in range(len(table_interp))]
+                ) if table_interp else "No tables present"
 
-                combined_content = f"""QUESTIONS: {ai_response.question}
-SUMMARY: {ai_response.summary}
+                combined_content = f"""QUESTIONS: {ai_response.get('question', '')}
+SUMMARY: {ai_response.get('summary', '')}
 IMAGE ANALYSIS: {img_analysis_text}
 TABLE ANALYSIS: {table_analysis_text}
 ORIGINAL TEXT: {content_data['text']}"""
@@ -412,10 +412,10 @@ ORIGINAL TEXT: {content_data['text']}"""
                         "chunk_index": idx,
                         "original_text": content_data['text'],
                         "raw_tables_html": content_data['tables'],
-                        "ai_questions": ai_response.question,
-                        "ai_summary": ai_response.summary,
-                        "image_interpretation": ai_response.image_interpretation,
-                        "table_interpretation": ai_response.table_interpretation,
+                        "ai_questions": ai_response.get("question", ""),
+                        "ai_summary": ai_response.get("summary", ""),
+                        "image_interpretation": img_interp,
+                        "table_interpretation": table_interp,
                         "image_paths": content_data['images_dirpath'],
                         "image_base64": content_data['image_base64'],
                         "page_numbers": content_data['page_no'],

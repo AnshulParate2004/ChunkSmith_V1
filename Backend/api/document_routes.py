@@ -17,7 +17,8 @@ from utils.file_helpers import FileHandler
 from utils.storage import StorageManager
 from utils.vector_store import VectorStoreManager
 from api.shared import processing_status, send_sse_message
-from api.auth_routes import get_current_user
+from api.auth_routes import get_current_user, get_supabase_client
+from utils.project_repository import ProjectRepository
 
 router = APIRouter(tags=["Document Processing"])
 
@@ -185,6 +186,24 @@ async def initiate_pdf_processing(
             "message": "Processing queued",
             "project_id": project_id
         }
+
+        # Upsert project + document in PostgreSQL (queued)
+        file_size_mb = os.path.getsize(upload_path) / (1024 * 1024)
+        try:
+            supabase = get_supabase_client()
+            repo = ProjectRepository(supabase)
+            repo.create_project(project_id)  # ensure project exists
+            pdf_path = f"{project_id}/{document_id}.pdf"
+            repo.upsert_document(
+                document_id=document_id,
+                project_id=project_id,
+                filename=file.filename or f"{document_id}.pdf",
+                status="queued",
+                pdf_path=pdf_path,
+                size_mb=file_size_mb,
+            )
+        except Exception as db_err:
+            print(f"DB upsert (queued) failed: {db_err}")
         
         # Start background processing
         background_tasks.add_task(
@@ -192,6 +211,8 @@ async def initiate_pdf_processing(
             project_id=project_id,
             document_id=document_id,
             upload_path=upload_path,
+            original_filename=file.filename or f"{document_id}.pdf",
+            file_size_mb=file_size_mb,
             max_characters=max_characters,
             new_after_n_chars=new_after_n_chars,
             combine_text_under_n_chars=combine_text_under_n_chars,
@@ -494,11 +515,30 @@ async def process_pdf_background(
     combine_text_under_n_chars: int,
     extract_images: bool,
     extract_tables: bool,
-    languages: str
+    languages: str,
+    original_filename: str = "",
+    file_size_mb: float = 0.0,
 ):
     """Background task for PDF processing with project-based storage"""
     
+    def _upsert_doc(status: str, **kwargs):
+        try:
+            supabase = get_supabase_client()
+            repo = ProjectRepository(supabase)
+            repo.upsert_document(
+                document_id=document_id,
+                project_id=project_id,
+                filename=original_filename or f"{document_id}.pdf",
+                status=status,
+                size_mb=file_size_mb,
+                **kwargs
+            )
+        except Exception as e:
+            print(f"DB upsert ({status}) failed: {e}")
+    
     try:
+        _upsert_doc("processing")
+        
         # Create a temporary workspace for this task to ensure no local artifacts remain
         temp_dir = tempfile.mkdtemp()
         image_dir = Path(temp_dir) / "images"
@@ -705,6 +745,16 @@ async def process_pdf_background(
         # Cleanup temporary workspace
         shutil.rmtree(temp_dir)
         
+        # Upsert completed in PostgreSQL
+        image_count = processor.image_counter if hasattr(processor, 'image_counter') else 0
+        _upsert_doc(
+            "completed",
+            pdf_path=f"{project_id}/{document_id}.pdf",
+            json_path=f"{project_id}/json/{document_id}_processed.json",
+            image_count=image_count,
+            chunk_count=len(chunks),
+        )
+        
         # Complete
         processing_status[document_id] = {
             "status": "completed",
@@ -714,13 +764,26 @@ async def process_pdf_background(
             "document_id": document_id,
             "stats": {
                 "chunks": len(chunks),
-                "images": processor.image_counter if hasattr(processor, 'image_counter') else 0
+                "images": image_count
             }
         }
         
     except Exception as e:
         import traceback
         traceback.print_exc()
+        
+        # Upsert failed in PostgreSQL
+        try:
+            supabase = get_supabase_client()
+            repo = ProjectRepository(supabase)
+            repo.upsert_document(
+                document_id=document_id,
+                project_id=project_id,
+                filename=original_filename or f"{document_id}.pdf",
+                status="failed",
+            )
+        except Exception as db_err:
+            print(f"DB upsert (failed) error: {db_err}")
         
         # Try to cleanup
         try:

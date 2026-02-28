@@ -107,29 +107,25 @@ class ApiService {
     return response.json();
   }
 
-  // NEW: List all projects
+  // List all projects (backend reads from PostgreSQL)
   async listProjects(): Promise<{ projects: Project[] }> {
     const response = await fetch(`${API_BASE_URL}/projects`, {
-      headers: this.getAuthHeaders()
+      headers: this.getAuthHeaders(),
     });
-
     if (!response.ok) {
       throw new Error(`Failed to list projects: ${response.statusText}`);
     }
-
     return response.json();
   }
 
-  // NEW: Get project details
+  // Get project details (backend reads from PostgreSQL)
   async getProjectDetails(projectId: string): Promise<ProjectDetails> {
-    const response = await fetch(`${API_BASE_URL}/projects/${projectId}`, {
-      headers: this.getAuthHeaders()
+    const response = await fetch(`${API_BASE_URL}/projects/${encodeURIComponent(projectId)}`, {
+      headers: this.getAuthHeaders(),
     });
-
     if (!response.ok) {
       throw new Error(`Failed to get project details: ${response.statusText}`);
     }
-
     return response.json();
   }
 
