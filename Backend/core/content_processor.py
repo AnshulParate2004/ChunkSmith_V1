@@ -9,6 +9,7 @@ from langchain_openai import AzureChatOpenAI
 from langchain_core.messages import HumanMessage
 from pydantic import BaseModel, Field
 from utils.storage import StorageManager
+from config.settings import settings
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -136,7 +137,8 @@ class ContentProcessor:
                         public_url = storage_mgr.upload_bytes(
                             base64.b64decode(image_base64),
                             storage_path,
-                            "image/png"
+                            "image/png",
+                            bucket_name=settings.SUPABASE_BUCKET_NAME  # chunk_images
                         )
 
                         # Store public URL in place of relative path
