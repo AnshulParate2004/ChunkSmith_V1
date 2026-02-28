@@ -47,6 +47,8 @@ class Settings(BaseSettings):
     # Supabase Settings
     SUPABASE_URL: str = ""
     SUPABASE_KEY: str = ""
+    # Frontend URL for auth redirects (e.g. email confirmation). Set to your deployed app URL.
+    SITE_URL: str = ""  # e.g. https://multi-modul-rag.vercel.app
     SUPABASE_BUCKET_NAME: str = "chunk_images"
     SUPABASE_DATA_BUCKET_NAME: str = "chunk_data"
     SUPABASE_PDF_BUCKET_NAME: str = "chunk_pdf"

@@ -118,13 +118,13 @@ async def login(request: LoginRequest):
 
 @router.post("/signup")
 async def signup(request: SignupRequest):
-    """Sign up with email and password"""
+    """Sign up with email and password. Email confirmation link uses SITE_URL when set."""
     try:
         supabase = get_supabase_client()
-        response = supabase.auth.sign_up({
-            "email": request.email,
-            "password": request.password
-        })
+        sign_up_options = {"email": request.email, "password": request.password}
+        if getattr(settings, "SITE_URL", None) and settings.SITE_URL.strip():
+            sign_up_options["options"] = {"email_redirect_to": settings.SITE_URL.strip().rstrip("/")}
+        response = supabase.auth.sign_up(sign_up_options)
         
         return {
             "success": True,
