@@ -68,10 +68,11 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
         setUser(response.user);
         setSession(response.session);
 
-        // Store user in localStorage
+        // Store user and session in localStorage for API calls
         localStorage.setItem("user", JSON.stringify(response.user));
+        localStorage.setItem("session", JSON.stringify(response.session));
 
-        // Store JWT in cookie only if user accepted cookies
+        // Store JWT in cookie only if user accepted cookies (for auto-login)
         const consent = getCookie("chunksmith_cookie_consent");
         if (consent === "true") {
             setCookie("chunksmith_access_token", response.session.access_token, 7);
@@ -95,6 +96,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
         setSession(null);
         deleteCookie("chunksmith_access_token");
         localStorage.removeItem("user");
+        localStorage.removeItem("session");
     };
 
     return (
