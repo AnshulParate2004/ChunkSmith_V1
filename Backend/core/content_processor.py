@@ -2,6 +2,7 @@
 import os
 import base64
 import asyncio
+import warnings
 from pathlib import Path
 from typing import List, Dict, Optional
 from langchain_core.documents import Document
@@ -13,6 +14,13 @@ from config.settings import settings
 from dotenv import load_dotenv
 
 load_dotenv()
+
+# Suppress noisy Pydantic serializer warnings for the internal "parsed" field
+warnings.filterwarnings(
+    "ignore",
+    message="PydanticSerializationUnexpectedValue",
+    module="pydantic.main",
+)
 
 
 class AIParser(BaseModel):
