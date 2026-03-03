@@ -110,7 +110,7 @@ export const ChatInterface = ({ documentId, projectId, onConversationCreated }: 
       type: 'user',
       content: message
     };
-    setMessages(prev => [...prev, userMsg]);
+    setMessages(prev => [...prev, userMsg].slice(-10));
 
     // Create assistant message for streaming
     streamingMessageIdRef.current = (Date.now() + 1).toString();
@@ -120,7 +120,7 @@ export const ChatInterface = ({ documentId, projectId, onConversationCreated }: 
       content: '',
       images: []
     };
-    setMessages(prev => [...prev, assistantMsg]);
+    setMessages(prev => [...prev, assistantMsg].slice(-10));
 
     // Connect to SSE with token in query params using persistent conversation endpoint
     const encodedMessage = encodeURIComponent(message);
@@ -187,16 +187,25 @@ export const ChatInterface = ({ documentId, projectId, onConversationCreated }: 
           }
           break;
 
-        case 'image':
+        case 'image': {
           const newImage = { filename: data.filename, data: data.data };
-          setCurrentImages(prev => [...prev, newImage]);
-          // Also immediately add to the streaming message
-          setMessages(prev => prev.map(msg =>
-            msg.id === streamingMessageIdRef.current
-              ? { ...msg, images: [...(msg.images || []), newImage] }
-              : msg
-          ));
+          // Track only the most recent 5 images for the current answer
+          setCurrentImages(prev => {
+            const next = [...prev, newImage];
+            return next.slice(-5);
+          });
+          // Also immediately add to the streaming message (max 5 images)
+          setMessages(prev =>
+            prev
+              .map(msg =>
+                msg.id === streamingMessageIdRef.current
+                  ? { ...msg, images: [...(msg.images || []), newImage].slice(-5) }
+                  : msg
+              )
+              .slice(-10)
+          );
           break;
+        }
 
         case 'response_start':
           if (readStepId) {
@@ -226,11 +235,13 @@ export const ChatInterface = ({ documentId, projectId, onConversationCreated }: 
           }
 
           setMessages(prev =>
-            prev.map(msg =>
-              msg.id === streamingMessageIdRef.current
-                ? { ...msg, content: msg.content + chunk }
-                : msg
-            )
+            prev
+              .map(msg =>
+                msg.id === streamingMessageIdRef.current
+                  ? { ...msg, content: msg.content + chunk }
+                  : msg
+              )
+              .slice(-10)
           );
           break;
         }
@@ -240,11 +251,13 @@ export const ChatInterface = ({ documentId, projectId, onConversationCreated }: 
             updateStep(writeStepId, { status: 'complete', label: 'Answer complete' });
           }
 
-          setMessages(prev => prev.map(msg =>
-            msg.id === streamingMessageIdRef.current
-              ? { ...msg }
-              : msg
-          ));
+          setMessages(prev =>
+            prev
+              .map(msg =>
+                msg.id === streamingMessageIdRef.current ? { ...msg } : msg
+              )
+              .slice(-10)
+          );
           break;
 
         case 'end':

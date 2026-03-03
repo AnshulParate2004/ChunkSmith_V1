@@ -77,58 +77,54 @@ class ConversationManager:
         self,
         conversation_id: str,
         role: str,
-        content: str
+        content: str,
+        metadata: Optional[Dict] = None,
     ) -> Dict:
         """
-        Add a message to a conversation
-        
-        Args:
-            conversation_id: Conversation UUID
-            role: 'user', 'assistant', or 'system'
-            content: Message content
-            
-        Returns:
-            Message dict
+        Add a message to a conversation.
+
+        `metadata` can hold structured fields such as image_references
+        coming from the ChatResponse Pydantic model.
         """
         data = {
             "conversation_id": conversation_id,
             "role": role,
-            "content": content
+            "content": content,
+            "metadata": metadata or {},
         }
-        
+
         result = self.client.table("messages").insert(data).execute()
-        
+
         # Update conversation's updated_at timestamp
         self.client.table("conversations")\
             .update({"updated_at": datetime.now().isoformat()})\
             .eq("id", conversation_id)\
             .execute()
-        
+
         return result.data[0] if result.data else None
     
     def get_messages(
         self,
         conversation_id: str,
-        limit: int = 100
+        limit: int = 10
     ) -> List[Dict]:
         """
-        Get messages for a conversation
-        
-        Args:
-            conversation_id: Conversation UUID
-            limit: Max messages to return
-            
-        Returns:
-            List of messages ordered by created_at asc
+        Get recent messages for a conversation.
+        We intentionally cap this to the most recent 10 messages
+        (roughly 5 user turns and 5 assistant replies) to keep the
+        conversation window manageable.
         """
-        result = self.client.table("messages")\
-            .select("*")\
-            .eq("conversation_id", conversation_id)\
-            .order("created_at", desc=False)\
-            .limit(limit)\
+        result = (
+            self.client.table("messages")
+            .select("*")
+            .eq("conversation_id", conversation_id)
+            .order("created_at", desc=True)
+            .limit(limit)
             .execute()
-        
-        return result.data if result.data else []
+        )
+
+        rows = list(reversed(result.data or []))
+        return rows
     
     def delete_conversation(self, conversation_id: str):
         """Delete a conversation (and all its messages via CASCADE)"""

@@ -219,7 +219,7 @@ const ChatPage = () => {
       type: 'user',
       content: message
     };
-    setMessages(prev => [...prev, userMsg]);
+    setMessages(prev => [...prev, userMsg].slice(-10));
 
     // Create assistant message for streaming
     streamingMessageIdRef.current = (Date.now() + 1).toString();
@@ -229,7 +229,7 @@ const ChatPage = () => {
       content: '',
       images: []
     };
-    setMessages(prev => [...prev, assistantMsg]);
+    setMessages(prev => [...prev, assistantMsg].slice(-10));
 
     // Connect to SSE with Token
     const encodedMessage = encodeURIComponent(message);
@@ -298,9 +298,14 @@ const ChatPage = () => {
           }
           break;
 
-        case 'image':
-          setCurrentImages(prev => [...prev, { filename: data.filename, data: data.data }]);
+        case 'image': {
+          // Maintain only the most recent 5 images for the current answer
+          setCurrentImages(prev => {
+            const next = [...prev, { filename: data.filename, data: data.data }];
+            return next.slice(-5);
+          });
           break;
+        }
 
         case 'response_start':
           if (readStepId) {
@@ -330,11 +335,13 @@ const ChatPage = () => {
           }
 
           setMessages(prev =>
-            prev.map(msg =>
-              msg.id === streamingMessageIdRef.current
-                ? { ...msg, content: msg.content + chunk }
-                : msg
-            )
+            prev
+              .map(msg =>
+                msg.id === streamingMessageIdRef.current
+                  ? { ...msg, content: msg.content + chunk }
+                  : msg
+              )
+              .slice(-10)
           );
           break;
         }
@@ -344,11 +351,15 @@ const ChatPage = () => {
             updateStep(writeStepId, { status: 'complete', label: 'Answer complete' });
           }
 
-          setMessages(prev => prev.map(msg =>
-            msg.id === streamingMessageIdRef.current
-              ? { ...msg, images: [...(msg.images || []), ...currentImages] }
-              : msg
-          ));
+          setMessages(prev =>
+            prev
+              .map(msg =>
+                msg.id === streamingMessageIdRef.current
+                  ? { ...msg, images: [...(msg.images || []), ...currentImages].slice(-5) }
+                  : msg
+              )
+              .slice(-10)
+          );
           break;
 
         case 'end':

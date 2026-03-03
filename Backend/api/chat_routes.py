@@ -311,12 +311,13 @@ async def stream_conversation_message(
 
             project_id = conv_result["project_id"]
             
-            # Save User Message
-            manager.add_message(conversation_id, "user", message)
-            
             # Initialize Agent for this project if needed
             if project_id not in chat_agents:
-                chat_agents[project_id] = ChatAgent(project_id=project_id, user_id=user.id)
+                chat_agents[project_id] = ChatAgent(
+                    project_id=project_id,
+                    conversation_id=conversation_id,
+                    user_id=user.id,
+                )
             
             agent = chat_agents[project_id]
             
@@ -337,10 +338,6 @@ async def stream_conversation_message(
                 if event_type == "content":
                     full_response += event_data.get("content", "")
             
-            # Save Assistant Message
-            if full_response:
-                manager.add_message(conversation_id, "assistant", full_response)
-                
             yield f"data: {json.dumps({'type': 'end'})}\n\n"
             
         except Exception as e:

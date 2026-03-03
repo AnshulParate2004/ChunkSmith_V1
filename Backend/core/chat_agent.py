@@ -100,21 +100,23 @@ class ChatAgent:
         self.system_prompt = """You are a helpful AI assistant that answers questions based on document content.
 
 INSTRUCTIONS:
-1. Use the provided context (text, image descriptions, table descriptions) to answer questions
-2. Return your response in structured format with:
-   - answer: Your complete answer to the question
-   - image_references: List of image indices (if images would help)
-3. Only reference images that directly support your answer
-4. When tables contain relevant data, describe the key information from the table descriptions provided
-5. If the answer isn't in the context, say so honestly
-6. Be concise but thorough
-7. Reference page numbers when available
+1. Use the provided context (text, image descriptions, table descriptions) to answer questions.
+2. Always check the AVAILABLE IMAGES section and, whenever they would genuinely help the user understand the answer, INCLUDE image_references.
+3. Return your response in structured format with:
+   - answer: Your complete answer to the question.
+   - image_references: List of image indices to show (see rules below).
+4. Only reference images that directly support your answer and are factually consistent with the text.
+5. When tables contain relevant data, describe the key information from the table descriptions provided.
+6. If the answer isn't in the context, say so honestly.
+7. Be concise but thorough.
+8. Reference page numbers when available.
 
-IMPORTANT: 
-- Use image INDEX numbers from the "Available Images" list (0-based indexing)
-- Only include image_references if images would genuinely help answer the question
-- You have IMAGE DESCRIPTIONS and TABLE DESCRIPTIONS - use these to answer
-- If the same information appears in multiple images, only reference one
+IMPORTANT:
+- Use image INDEX numbers from the "Available Images" list (0-based indexing).
+- Prefer showing 1–3 of the MOST USEFUL images, but you may include up to 5 when clearly helpful.
+- If no image clearly helps, leave image_references as an empty list.
+- You have IMAGE DESCRIPTIONS and TABLE DESCRIPTIONS – use these to answer.
+- If the same information appears in multiple images, only reference one.
 
 CONTEXT:
 {context}
@@ -126,42 +128,60 @@ Answer the user's question based on the context and conversation history."""
 
 
     def _get_history(self) -> List[HumanMessage | AIMessage]:
-        """Fetch conversation history from Supabase"""
+        """
+        Fetch recent conversation history from Supabase.
+        We keep at most the last 10 turns (5 user + 5 assistant messages)
+        to control context length.
+        """
         if not self.conversation_id or not self.supabase:
             return []
-            
+
         try:
-            # Fetch last 10 messages from 'messages' table
-            response = self.supabase.table("messages") \
-                .select("*") \
-                .eq("conversation_id", self.conversation_id) \
-                .order("created_at", desc=True) \
-                .limit(10) \
+            # Fetch last 10 messages from 'messages' table (newest first)
+            response = (
+                self.supabase.table("messages")
+                .select("*")
+                .eq("conversation_id", self.conversation_id)
+                .order("created_at", desc=True)
+                .limit(10)
                 .execute()
-            
-            # Convert to LangChain messages (reverse order to be chronological)
-            history = []
-            for msg in reversed(response.data):
-                if msg["role"] == "user":
-                    history.append(HumanMessage(content=msg["content"]))
-                else:
-                    history.append(AIMessage(content=msg["content"]))
-            
+            )
+
+            rows = list(reversed(response.data or []))  # oldest -> newest
+
+            # If there are more than 10, trim to last 10 messages explicitly
+            rows = rows[-10:]
+
+            history: List[HumanMessage | AIMessage] = []
+            for msg in rows:
+                role = msg.get("role")
+                content = msg.get("content", "")
+                if role == "user":
+                    history.append(HumanMessage(content=content))
+                elif role == "assistant":
+                    history.append(AIMessage(content=content))
+
             return history
         except Exception as e:
             print(f"Error fetching history: {e}")
             return []
 
-    async def _save_message(self, role: str, content: str):
-        """Save a message to Supabase history"""
+    async def _save_message(self, role: str, content: str, metadata: Optional[Dict] = None):
+        """
+        Save a message to Supabase history.
+
+        `metadata` is used to persist structured fields such as
+        image_references from the ChatResponse model.
+        """
         if not self.conversation_id or not self.supabase:
             return
-            
+
         try:
             self.supabase.table("messages").insert({
                 "conversation_id": self.conversation_id,
                 "role": role,
-                "content": content
+                "content": content,
+                "metadata": metadata or {},
             }).execute()
         except Exception as e:
             print(f"Error saving message: {e}")
@@ -286,8 +306,7 @@ Answer the user's question based on the context and conversation history."""
     ) -> AsyncGenerator[Dict, None]:
         """Stream chat responses with SSE"""
         try:
-            # Step 0: Save User Message (Fire and forget, or await?)
-            # Await to ensure consistency
+            # Step 0: Save User Message (await to ensure consistency)
             await self._save_message("user", user_message)
 
             # Step 1: Search for relevant context
@@ -332,7 +351,7 @@ Answer the user's question based on the context and conversation history."""
             }
             
             response: ChatResponse = await self.structured_llm.ainvoke(messages)
-            
+
             # Step 4: Stream answer
             answer_text = response.answer
             chunk_size = 30
@@ -348,7 +367,10 @@ Answer the user's question based on the context and conversation history."""
             # Step 5: Send images
             images_sent = 0
             if response.image_references:
-                unique_indices = list(set(ref.index for ref in response.image_references))
+                # Unique image indices referenced by the model
+                unique_indices = list(dict.fromkeys(ref.index for ref in response.image_references))
+                # Keep only the most relevant 5 images
+                unique_indices = unique_indices[:5]
                 
                 yield {
                     "type": "images_found",
@@ -388,8 +410,19 @@ Answer the user's question based on the context and conversation history."""
                     else:
                         pass
             
-            # Step 6: Save AI response
-            await self._save_message("assistant", answer_text)
+            # Step 6: Save AI response including structured image_references
+            image_refs_payload = [
+                {
+                    "index": ref.index,
+                    "reason": ref.reason,
+                }
+                for ref in (response.image_references or [])
+            ]
+            await self._save_message(
+                "assistant",
+                answer_text,
+                metadata={"image_references": image_refs_payload},
+            )
             
             # Step 7: Completion
             yield {
