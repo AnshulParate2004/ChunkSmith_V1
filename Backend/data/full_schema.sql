@@ -1,14 +1,11 @@
--- ============================================
--- ChunkSmith: Full Supabase PostgreSQL Schema
--- Run in Supabase Dashboard > SQL Editor
--- Requires: Supabase Auth (auth.users) enabled
--- ============================================
 
--- Extensions
+-- --------------------------------------------
+-- 2. Extensions
+-- --------------------------------------------
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 
 -- ============================================
--- 1. PROJECTS & DOCUMENTS
+-- 3. PROJECTS & DOCUMENTS
 -- ============================================
 
 CREATE TABLE IF NOT EXISTS projects (
@@ -40,17 +37,42 @@ CREATE INDEX IF NOT EXISTS idx_documents_project_id ON documents(project_id);
 CREATE INDEX IF NOT EXISTS idx_documents_status ON documents(status);
 CREATE INDEX IF NOT EXISTS idx_documents_deleted_at ON documents(deleted_at) WHERE deleted_at IS NULL;
 
--- Migration: add size_mb if table already exists
+-- Migration helper (safe if run multiple times)
 ALTER TABLE documents ADD COLUMN IF NOT EXISTS size_mb NUMERIC(10, 2) DEFAULT 0;
 
 ALTER TABLE projects ENABLE ROW LEVEL SECURITY;
 ALTER TABLE documents ENABLE ROW LEVEL SECURITY;
 
-CREATE POLICY "Allow all for projects" ON projects FOR ALL USING (true) WITH CHECK (true);
-CREATE POLICY "Allow all for documents" ON documents FOR ALL USING (true) WITH CHECK (true);
+-- Restrict projects by user_id
+DROP POLICY IF EXISTS "Allow all for projects" ON projects;
+CREATE POLICY "Users manage own projects"
+    ON projects
+    FOR ALL
+    USING (auth.uid() = user_id)
+    WITH CHECK (auth.uid() = user_id);
+
+-- Restrict documents via their project's user_id
+DROP POLICY IF EXISTS "Allow all for documents" ON documents;
+CREATE POLICY "Users manage own documents"
+    ON documents
+    FOR ALL
+    USING (
+        EXISTS (
+            SELECT 1 FROM projects
+            WHERE projects.id = documents.project_id
+            AND projects.user_id = auth.uid()
+        )
+    )
+    WITH CHECK (
+        EXISTS (
+            SELECT 1 FROM projects
+            WHERE projects.id = documents.project_id
+            AND projects.user_id = auth.uid()
+        )
+    );
 
 -- ============================================
--- 2. CONVERSATIONS & MESSAGES
+-- 4. CONVERSATIONS & MESSAGES
 -- ============================================
 
 CREATE TABLE IF NOT EXISTS conversations (
@@ -113,8 +135,9 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
-DROP TRIGGER IF EXISTS update_conversations_updated_at ON conversations;
 CREATE TRIGGER update_conversations_updated_at
     BEFORE UPDATE ON conversations
     FOR EACH ROW
     EXECUTE FUNCTION update_updated_at_column();
+
+COMMIT;

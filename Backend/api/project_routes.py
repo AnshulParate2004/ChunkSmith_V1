@@ -77,6 +77,18 @@ async def get_project_details(project_id: str, user = Depends(get_current_user))
     try:
         supabase = get_supabase_client()
         repo = ProjectRepository(supabase)
+
+        # Ensure the project belongs to the current user
+        user_id = str(user.id) if hasattr(user, "id") else None
+        if not user_id:
+            raise HTTPException(status_code=401, detail="User not authenticated")
+
+        project_row = repo.get_project(project_id)
+        if not project_row:
+            raise HTTPException(status_code=404, detail="Project not found")
+        if project_row.get("user_id") and str(project_row["user_id"]) != user_id:
+            raise HTTPException(status_code=403, detail="Not authorized to access this project")
+
         doc_rows = repo.get_project_documents(project_id)
         
         pdf_files = [
@@ -118,10 +130,22 @@ async def delete_project(project_id: str, user = Depends(get_current_user)):
     Storage buckets and vector store are NOT deleted - data is preserved for recovery.
     """
     try:
+        supabase = get_supabase_client()
+        repo = ProjectRepository(supabase)
+
+        # Ensure the project belongs to the current user before deleting
+        user_id = str(user.id) if hasattr(user, "id") else None
+        if not user_id:
+            raise HTTPException(status_code=401, detail="User not authenticated")
+
+        project_row = repo.get_project(project_id)
+        if not project_row:
+            raise HTTPException(status_code=404, detail="Project not found")
+        if project_row.get("user_id") and str(project_row["user_id"]) != user_id:
+            raise HTTPException(status_code=403, detail="Not authorized to delete this project")
+
         # Soft delete in PostgreSQL (projects + documents)
         try:
-            supabase = get_supabase_client()
-            repo = ProjectRepository(supabase)
             repo.soft_delete_project(project_id)
         except Exception as db_err:
             print(f"DB soft delete error (tables may not exist yet): {db_err}")

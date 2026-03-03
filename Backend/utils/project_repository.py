@@ -9,13 +9,48 @@ class ProjectRepository:
 
     def __init__(self, client: Client):
         self.client = client
+    
+    def get_project(self, project_id: str) -> Optional[dict]:
+        """Fetch a single project by id."""
+        result = (
+            self.client.table("projects")
+            .select("*")
+            .eq("id", project_id)
+            .execute()
+        )
+        return result.data[0] if result.data else None
 
     def create_project(self, project_id: str, user_id: Optional[str] = None) -> dict:
-        """Insert a new project."""
+        """
+        Insert a new project for a user.
+        If the project already exists:
+        - If it belongs to the same user (or user_id is None), return it.
+        - If it belongs to a different user, raise ValueError.
+        """
+        existing = (
+            self.client.table("projects")
+            .select("id, user_id")
+            .eq("id", project_id)
+            .execute()
+        )
+        if existing.data:
+            row = existing.data[0]
+            existing_user_id = row.get("user_id")
+            if user_id and existing_user_id and existing_user_id != user_id:
+                raise ValueError("Project belongs to a different user")
+            # Optionally attach user_id if previously null
+            if user_id and not existing_user_id:
+                updated = (
+                    self.client.table("projects")
+                    .update({"user_id": user_id})
+                    .eq("id", project_id)
+                    .execute()
+                )
+                return updated.data[0] if updated.data else row
+            return row
+
         data = {"id": project_id, "user_id": user_id}
-        result = self.client.table("projects").upsert(
-            data, on_conflict="id", ignore_duplicates=False
-        ).execute()
+        result = self.client.table("projects").insert(data).execute()
         return result.data[0] if result.data else data
 
     def list_projects(self, user_id: Optional[str] = None) -> List[dict]:
@@ -23,9 +58,14 @@ class ProjectRepository:
         List all projects. If user_id provided, filter by it.
         Returns list with project_id, created_at, file_count.
         """
-        query = self.client.table("projects").select(
-            "id, created_at"
-        ).is_("deleted_at", "null").order("created_at", desc=True)
+        query = (
+            self.client.table("projects")
+            .select("id, created_at, user_id")
+            .is_("deleted_at", "null")
+        )
+        if user_id:
+            query = query.eq("user_id", user_id)
+        query = query.order("created_at", desc=True)
         result = query.execute()
         if not result.data:
             return []

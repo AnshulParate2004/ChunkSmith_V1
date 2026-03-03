@@ -192,7 +192,9 @@ async def initiate_pdf_processing(
         try:
             supabase = get_supabase_client()
             repo = ProjectRepository(supabase)
-            repo.create_project(project_id)  # ensure project exists
+            user_id = str(user.id) if hasattr(user, "id") else None
+            # Ensure project exists and belongs to current user
+            repo.create_project(project_id, user_id=user_id)
             pdf_path = f"{project_id}/{document_id}.pdf"
             repo.upsert_document(
                 document_id=document_id,
@@ -202,6 +204,10 @@ async def initiate_pdf_processing(
                 pdf_path=pdf_path,
                 size_mb=file_size_mb,
             )
+        except ValueError as ownership_err:
+            # Project exists but belongs to a different user
+            print(f"Project ownership error: {ownership_err}")
+            raise HTTPException(status_code=403, detail=str(ownership_err))
         except Exception as db_err:
             print(f"DB upsert (queued) failed: {db_err}")
         
