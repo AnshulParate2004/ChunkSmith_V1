@@ -40,7 +40,7 @@ Unlike traditional RAG systems that often discard visual information, ChunkSmith
 User uploads any PDF file to the system.
 
 ### 2. OCR + Chunking
-The PDF is broken into smaller chunks using **Tesseract OCR** & **Poppler**.
+The PDF is broken into smaller chunks using **Yolov11**, **Tesseract OCR** & **Poppler**.
 
 ### 3. Chunk Format
 Each chunk contains **Text**, **Snapshot**, **Summary**, and **Metadata**.

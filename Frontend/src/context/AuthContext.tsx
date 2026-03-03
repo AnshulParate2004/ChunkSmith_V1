@@ -1,5 +1,6 @@
 import { createContext, useContext, useEffect, useState } from "react";
 import { apiService } from "@/services/api";
+import { getCookie, setCookie, deleteCookie } from "@/utils/cookies";
 
 interface User {
     id: string;
@@ -39,24 +40,22 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     const [loading, setLoading] = useState(true);
 
     useEffect(() => {
-        // Check for existing session in localStorage
-        const storedSession = localStorage.getItem('session');
-        const storedUser = localStorage.getItem('user');
+        // Check for existing session in cookies/localStorage
+        const accessToken = getCookie("chunksmith_access_token");
+        const storedUser = localStorage.getItem("user");
 
-        if (storedSession && storedUser) {
-            const parsedSession = JSON.parse(storedSession);
+        if (accessToken && storedUser) {
             const parsedUser = JSON.parse(storedUser);
 
-            // Verify session is still valid
-            apiService.getSession(parsedSession.access_token)
+            apiService
+                .getSession(accessToken)
                 .then(() => {
-                    setSession(parsedSession);
+                    setSession({ access_token: accessToken, refresh_token: "" });
                     setUser(parsedUser);
                 })
                 .catch(() => {
-                    // Session invalid, clear storage
-                    localStorage.removeItem('session');
-                    localStorage.removeItem('user');
+                    deleteCookie("chunksmith_access_token");
+                    localStorage.removeItem("user");
                 })
                 .finally(() => setLoading(false));
         } else {
@@ -69,9 +68,14 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
         setUser(response.user);
         setSession(response.session);
 
-        // Store in localStorage
-        localStorage.setItem('user', JSON.stringify(response.user));
-        localStorage.setItem('session', JSON.stringify(response.session));
+        // Store user in localStorage
+        localStorage.setItem("user", JSON.stringify(response.user));
+
+        // Store JWT in cookie only if user accepted cookies
+        const consent = getCookie("chunksmith_cookie_consent");
+        if (consent === "true") {
+            setCookie("chunksmith_access_token", response.session.access_token, 7);
+        }
     };
 
     const signup = async (email: string, password: string) => {
@@ -89,8 +93,8 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
 
         setUser(null);
         setSession(null);
-        localStorage.removeItem('user');
-        localStorage.removeItem('session');
+        deleteCookie("chunksmith_access_token");
+        localStorage.removeItem("user");
     };
 
     return (

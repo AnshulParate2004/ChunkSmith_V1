@@ -13,8 +13,10 @@ import DocumentsPage from "./pages/DocumentsPage";
 import ChatPage from "./pages/ChatPage";
 import NotFound from "./pages/NotFound";
 import AuthPage from "./pages/AuthPage"; // New
+import TermsPage from "./pages/TermsPage";
 import { AuthProvider, useAuth } from "./context/AuthContext"; // New
 import { Loader2 } from "lucide-react";
+import { CookieConsentBanner } from "./components/CookieConsentBanner";
 
 const queryClient = new QueryClient();
 
@@ -50,6 +52,7 @@ const App = () => (
                 {/* Public Routes */}
                 <Route path="/" element={<LandingPage />} />
                 <Route path="/auth" element={<AuthPage />} />
+                <Route path="/terms" element={<TermsPage />} />
 
                 {/* Protected Routes */}
                 <Route element={<ProtectedRoute />}>
@@ -65,6 +68,7 @@ const App = () => (
                 <Route path="*" element={<NotFound />} />
               </Routes>
             </div>
+            <CookieConsentBanner />
           </div>
         </BrowserRouter>
       </TooltipProvider>

@@ -44,6 +44,17 @@ const ChatPage = () => {
   const eventSourceRef = useRef<EventSource | null>(null);
   const streamingMessageIdRef = useRef<string>('');
 
+  const activeConversation = conversations.find((c) => c.id === activeConversationId) || null;
+  const [titleDraft, setTitleDraft] = useState<string>("");
+
+  useEffect(() => {
+    if (activeConversation) {
+      setTitleDraft(activeConversation.title || "New Chat");
+    } else {
+      setTitleDraft("");
+    }
+  }, [activeConversationId, conversations.length]);
+
   // Fetch conversations on load
   useEffect(() => {
     if (projectId && session?.access_token) {
@@ -112,15 +123,12 @@ const ChatPage = () => {
   };
 
   const handleNewChat = async () => {
-    if (!projectId || !session?.access_token) return;
-    try {
-      const response = await apiService.createConversation(projectId, "New Conversation", session.access_token);
-      setConversations([response.conversation, ...conversations]);
-      setActiveConversationId(response.conversation.id);
-      setMessages([]);
-    } catch (error) {
-      toast.error('Failed to create conversation');
-    }
+    // Reset to a fresh, untitled conversation.
+    setActiveConversationId(null);
+    setMessages([]);
+    setStreamingSteps([]);
+    setCurrentImages([]);
+    setTitleDraft("");
   };
 
   const handleDeleteConversation = async (id: string) => {
@@ -325,6 +333,23 @@ const ChatPage = () => {
     startStreaming(inputMessage);
   };
 
+  const handleTitleSave = async () => {
+    if (!session?.access_token || !activeConversationId) return;
+    const trimmed = titleDraft.trim();
+    if (!trimmed) return;
+    try {
+      await apiService.updateConversationTitle(activeConversationId, trimmed, session.access_token);
+      setConversations((prev) =>
+        prev.map((c) =>
+          c.id === activeConversationId ? { ...c, title: trimmed } : c
+        )
+      );
+      toast.success("Title updated");
+    } catch {
+      toast.error("Failed to update title");
+    }
+  };
+
   return (
     <div className="h-screen bg-background flex flex-col">
       {/* Header */}
@@ -338,8 +363,25 @@ const ChatPage = () => {
             <ArrowLeft className="w-5 h-5" />
           </Button>
           <div>
-            <h1 className="text-xl font-bold">Project Chat</h1>
-            <p className="text-xs text-muted-foreground">in {projectId}</p>
+            <h1 className="text-xl font-bold mb-1">
+              {activeConversation ? "Conversation" : "Project Chat"}
+            </h1>
+            {activeConversation ? (
+              <Input
+                value={titleDraft}
+                onChange={(e) => setTitleDraft(e.target.value)}
+                onBlur={handleTitleSave}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    e.preventDefault();
+                    handleTitleSave();
+                  }
+                }}
+                className="h-8 px-2 text-sm font-medium max-w-xs"
+              />
+            ) : (
+              <p className="text-xs text-muted-foreground">in {projectId}</p>
+            )}
           </div>
         </div>
       </div>

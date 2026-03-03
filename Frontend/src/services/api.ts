@@ -438,6 +438,22 @@ class ApiService {
     if (!response.ok) throw new Error('Failed to delete conversation');
     return response.json();
   }
+
+  async updateConversationTitle(conversationId: string, title: string, token?: string): Promise<{ success: boolean }> {
+    const headers: HeadersInit = {
+      'Content-Type': 'application/json',
+    };
+    if (token) headers['Authorization'] = `Bearer ${token}`;
+
+    const response = await fetch(`${API_BASE_URL}/chat/conversations/${conversationId}/title`, {
+      method: 'PATCH',
+      headers,
+      body: JSON.stringify({ title }),
+    });
+
+    if (!response.ok) throw new Error('Failed to update conversation title');
+    return response.json();
+  }
 }
 
 export interface ChunkImage {
