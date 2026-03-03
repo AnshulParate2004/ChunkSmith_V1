@@ -212,13 +212,28 @@ export const ChatInterface = ({ documentId, projectId, onConversationCreated }: 
           });
           break;
 
-        case 'content':
-          setMessages(prev => prev.map(msg =>
-            msg.id === streamingMessageIdRef.current
-              ? { ...msg, content: msg.content + data.content }
-              : msg
-          ));
+        case 'content': {
+          // Safely handle missing content to avoid "undefinedundefined" artifacts
+          const chunk: string =
+            typeof data.content === 'string'
+              ? data.content
+              : typeof data.answer === 'string'
+                ? data.answer
+                : '';
+
+          if (!chunk) {
+            break;
+          }
+
+          setMessages(prev =>
+            prev.map(msg =>
+              msg.id === streamingMessageIdRef.current
+                ? { ...msg, content: msg.content + chunk }
+                : msg
+            )
+          );
           break;
+        }
 
         case 'complete':
           if (writeStepId) {
@@ -271,7 +286,7 @@ export const ChatInterface = ({ documentId, projectId, onConversationCreated }: 
           variant="outline"
           size="sm"
           onClick={handleClearHistory}
-          disabled={!sessionId || messages.length === 0}
+          disabled={messages.length === 0}
           className="gap-2"
         >
           <Trash2 className="w-4 h-4" />
@@ -320,12 +335,12 @@ export const ChatInterface = ({ documentId, projectId, onConversationCreated }: 
           onChange={(e) => setInputMessage(e.target.value)}
           onKeyPress={(e) => e.key === 'Enter' && handleSendMessage()}
           placeholder="Ask a question..."
-          disabled={isStreaming || !sessionId}
+          disabled={isStreaming}
           className="flex-1"
         />
         <Button
           onClick={handleSendMessage}
-          disabled={isStreaming || !sessionId || !inputMessage.trim()}
+          disabled={isStreaming || !inputMessage.trim()}
           size="icon"
         >
           {isStreaming ? (

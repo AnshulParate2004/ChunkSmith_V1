@@ -105,12 +105,13 @@ const ChatPage = () => {
       const response = await apiService.listConversations(projectId, session.access_token);
       setConversations(response.conversations);
 
-      // Auto-select most recent if available
+      // Auto-select most recent if available, unless "new=1" is present
       const initialId = searchParams.get('conversationId');
+      const newFlag = searchParams.get('new');
       if (response.conversations.length > 0) {
         if (initialId) {
           setActiveConversationId(initialId);
-        } else if (!activeConversationId) {
+        } else if (!activeConversationId && newFlag !== '1') {
           setActiveConversationId(response.conversations[0].id);
         }
       }
@@ -315,13 +316,28 @@ const ChatPage = () => {
           });
           break;
 
-        case 'content':
-          setMessages(prev => prev.map(msg =>
-            msg.id === streamingMessageIdRef.current
-              ? { ...msg, content: msg.content + data.content }
-              : msg
-          ));
+        case 'content': {
+          // Safely handle missing content to avoid "undefinedundefined" text
+          const chunk: string =
+            typeof data.content === 'string'
+              ? data.content
+              : typeof data.answer === 'string'
+                ? data.answer
+                : '';
+
+          if (!chunk) {
+            break;
+          }
+
+          setMessages(prev =>
+            prev.map(msg =>
+              msg.id === streamingMessageIdRef.current
+                ? { ...msg, content: msg.content + chunk }
+                : msg
+            )
+          );
           break;
+        }
 
         case 'complete':
           if (writeStepId) {

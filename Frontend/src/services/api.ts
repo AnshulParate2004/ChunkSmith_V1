@@ -421,7 +421,9 @@ class ApiService {
     });
 
     if (!response.ok) throw new Error('Failed to create conversation');
-    return response.json();
+    const data = await response.json();
+    // Backend returns a single conversation object; wrap it.
+    return { success: true, conversation: data };
   }
 
   async listConversations(projectId?: string, token?: string): Promise<{ conversations: any[] }> {

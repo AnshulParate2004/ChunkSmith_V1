@@ -268,16 +268,16 @@ async def get_messages(
         if not conv_result or conv_result["user_id"] != user.id:
             raise HTTPException(status_code=403, detail="Not authorized")
             
-        result = manager.get_messages(conversation_id)
-        
-        return result
+        # Fetch messages list and wrap in a consistent response shape
+        messages = manager.get_messages(conversation_id)
+        return {"success": True, "messages": messages}
     except HTTPException:
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.post("/conversations/{conversation_id}/message_stream")
+@router.get("/conversations/{conversation_id}/message_stream")
 async def stream_conversation_message(
     conversation_id: str,
     message: str = Query(..., description="User message"),
@@ -314,27 +314,28 @@ async def stream_conversation_message(
             # Save User Message
             manager.add_message(conversation_id, "user", message)
             
-            # Get Context/History (Last 10 messages)
-            # history_res = manager.get_messages(conversation_id)
-            # Todo: Format history for agent if needed
-            
-            # Initialize Agent
+            # Initialize Agent for this project if needed
             if project_id not in chat_agents:
                 chat_agents[project_id] = ChatAgent(project_id=project_id, user_id=user.id)
             
             agent = chat_agents[project_id]
             
+            # Initial connected event (flattened for frontend)
             yield f"data: {json.dumps({'type': 'connected', 'message': 'Connected'})}\n\n"
             
             full_response = ""
             
-            # Stream response
-            # Pass conversation_id context if agent supports it, or just use history
+            # Stream response from chat agent, flattening the inner `data` payload
             async for event in agent.chat_stream(message):
-                yield f"data: {json.dumps(event)}\n\n"
+                event_type = event.get("type")
+                event_data = event.get("data", {}) or {}
+
+                # Build SSE message compatible with existing frontend handler
+                sse_message = {"type": event_type, **event_data}
+                yield f"data: {json.dumps(sse_message)}\n\n"
                 
-                if event["type"] == "content":
-                    full_response += event["data"].get("content", "")
+                if event_type == "content":
+                    full_response += event_data.get("content", "")
             
             # Save Assistant Message
             if full_response:

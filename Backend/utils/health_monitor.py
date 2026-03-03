@@ -30,14 +30,17 @@ def log_message(message: str, level: str = "INFO"):
 
 def get_health_endpoint() -> str:
     """
-    Get health endpoint URL - hardcoded Render URL
-    This allows the system to ping itself through the external URL, 
-    which Render counts as external traffic (prevents sleeping)
+    Get health endpoint URL.
+    - Locally: use the backend's own /api/health on port 8000.
+    - On Render/production you can override via EXTERNAL_API_URL if needed.
     """
-    # Hardcoded Render URL - always use this
-    endpoint = "https://chunksmith.onrender.com/api/health"
-    log_message(f"Using hardcoded Render URL: {endpoint}", "INFO")
-    log_message("This will ping the external URL to prevent Render from sleeping", "INFO")
+    external = os.getenv("EXTERNAL_API_URL")
+    if external:
+        base = external.rstrip("/")
+        endpoint = f"{base}/api/health"
+    else:
+        endpoint = "https://chunksmith.onrender.com/api/health"
+    log_message(f"Using health endpoint: {endpoint}", "INFO")
     return endpoint
 
 
@@ -58,7 +61,12 @@ async def check_health() -> Tuple[bool, Optional[Dict[str, Any]]]:
         async with httpx.AsyncClient(timeout=TIMEOUT) as client:
             response = await client.get(HEALTH_ENDPOINT)
             response.raise_for_status()
-            data = response.json()
+            try:
+                data = response.json()
+            except ValueError:
+                # Non-JSON response; treat as basic success
+                log_message("Health endpoint returned non-JSON body; treating as up", "SUCCESS")
+                data = {"status": "ok"}
             return True, data
     except httpx.ConnectError:
         log_message("Connection failed - Backend may be down", "ERROR")

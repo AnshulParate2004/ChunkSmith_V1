@@ -1,7 +1,10 @@
 import os
 import json
+import asyncio
+import warnings
 from pathlib import Path
 from typing import List, Dict, AsyncGenerator, Optional, Union
+
 from langchain_core.messages import HumanMessage, AIMessage, SystemMessage
 from langchain_openai import AzureChatOpenAI
 from supabase import create_client
@@ -9,9 +12,15 @@ from utils.vector_store import VectorStoreManager
 from config.settings import settings
 from dotenv import load_dotenv
 from pydantic import BaseModel, Field
-import asyncio
 
 load_dotenv()
+
+# Suppress noisy Pydantic serializer warnings for ChatResponse "parsed" field
+warnings.filterwarnings(
+    "ignore",
+    message="PydanticSerializationUnexpectedValue",
+    module="pydantic.main",
+)
 
 
 class ImageReference(BaseModel):

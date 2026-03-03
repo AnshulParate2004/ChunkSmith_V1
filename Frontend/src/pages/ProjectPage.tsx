@@ -172,17 +172,11 @@ const ProjectPage = () => {
   };
 
   const handleNewConversation = () => {
-    // Start a chat within this project page, using the first completed document
-    const completeDocs = uploadedDocs.filter(doc => doc.status === 'complete');
-    if (completeDocs.length > 0) {
-      setActiveChatDoc(completeDocs[0].documentId);
-    } else {
-      toast({
-        title: "No documents ready",
-        description: "Please upload and process a document first",
-        variant: "destructive",
-      });
+    if (!projectId) {
+      return;
     }
+    // Navigate to the dedicated conversation page and start a fresh chat
+    navigate(`/chat/${projectId}?new=1`);
   };
 
   const handleFileSelect = (file: File) => setSelectedFile(file);
