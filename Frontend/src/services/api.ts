@@ -145,6 +145,25 @@ class ApiService {
     return response.json();
   }
 
+  async deleteDocument(projectId: string, documentId: string): Promise<{ success: boolean; message: string }> {
+    const encodedProjectId = encodeURIComponent(projectId);
+    const encodedDocumentId = encodeURIComponent(documentId);
+    const response = await fetch(
+      `${API_BASE_URL}/projects/${encodedProjectId}/documents/${encodedDocumentId}`,
+      {
+        method: 'DELETE',
+        headers: this.getAuthHeaders(),
+      }
+    );
+
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      throw new Error(errorData.detail || `Failed to delete document: ${response.statusText}`);
+    }
+
+    return response.json();
+  }
+
   // UPDATED: Now requires project_id
   async uploadPDF(file: File, settings: ProcessSettings, projectId: string) {
     console.log('=== Upload Debug ===');
@@ -389,7 +408,7 @@ class ApiService {
   // CONVERSATION ENDPOINTS
   // ============================================
 
-  async createConversation(projectId: string, title?: string, token?: string): Promise<{ success: boolean; conversation: any }> {
+  async createConversation(projectId: string, firstMessage: string, token?: string): Promise<{ success: boolean; conversation: any }> {
     const headers: HeadersInit = {
       'Content-Type': 'application/json',
     };
@@ -398,14 +417,14 @@ class ApiService {
     const response = await fetch(`${API_BASE_URL}/chat/conversations`, {
       method: 'POST',
       headers,
-      body: JSON.stringify({ project_id: projectId, title }),
+      body: JSON.stringify({ project_id: projectId, first_message: firstMessage }),
     });
 
     if (!response.ok) throw new Error('Failed to create conversation');
     return response.json();
   }
 
-  async listConversations(projectId?: string, token?: string): Promise<{ success: boolean; conversations: any[] }> {
+  async listConversations(projectId?: string, token?: string): Promise<{ conversations: any[] }> {
     const headers: HeadersInit = {};
     if (token) headers['Authorization'] = `Bearer ${token}`;
 
@@ -414,7 +433,9 @@ class ApiService {
 
     const response = await fetch(url.toString(), { headers });
     if (!response.ok) throw new Error('Failed to list conversations');
-    return response.json();
+    const data = await response.json();
+    // Backend returns a plain list [], wrap it for callers.
+    return { conversations: Array.isArray(data) ? data : [] };
   }
 
   async getConversationHistory(conversationId: string, token?: string): Promise<{ success: boolean; messages: any[] }> {

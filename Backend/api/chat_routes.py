@@ -1,5 +1,6 @@
 """Chat and Conversation API routes"""
 import json
+import os
 from typing import AsyncGenerator, Optional
 from fastapi import APIRouter, HTTPException, Depends, Query
 from fastapi.responses import StreamingResponse
@@ -9,6 +10,8 @@ from core.chat_agent import ChatAgent
 from api.shared import chat_agents
 from api.auth_routes import get_current_user, get_supabase_client
 from utils.conversation_manager import ConversationManager
+from langchain_openai import AzureChatOpenAI
+from langchain_core.messages import HumanMessage
 
 router = APIRouter(prefix="/chat", tags=["Chat & Conversations"])
 
@@ -20,6 +23,7 @@ router = APIRouter(prefix="/chat", tags=["Chat & Conversations"])
 class ConversationCreateRequest(BaseModel):
     project_id: str
     title: Optional[str] = None
+    first_message: Optional[str] = None
 
 class TitleUpdateRequest(BaseModel):
     title: str
@@ -144,17 +148,63 @@ async def clear_chat_session(
 # PERSISTENT CONVERSATION ENDPOINTS
 # ============================================
 
+async def _generate_conversation_title(first_message: str) -> str:
+    """
+    Use Azure OpenAI to generate a short descriptive title for a conversation
+    based on the first user question.
+    """
+    text = (first_message or "").strip()
+    if not text:
+        return "New conversation"
+    try:
+        azure_api_key = settings.AZURE_OPENAI_API_KEY or os.getenv("AZURE_OPENAI_API_KEY")
+        azure_endpoint = settings.AZURE_OPENAI_ENDPOINT or os.getenv("AZURE_OPENAI_ENDPOINT")
+        azure_api_version = settings.AZURE_OPENAI_API_VERSION
+        if not azure_api_key or not azure_endpoint:
+            # Fallback: truncated question
+            return (text[:60] + "...") if len(text) > 60 else text
+        llm = AzureChatOpenAI(
+            azure_endpoint=azure_endpoint,
+            api_key=azure_api_key,
+            azure_deployment=settings.AZURE_OPENAI_CHAT_MODEL,
+            api_version=azure_api_version,
+            temperature=0.2,
+        )
+        prompt = (
+            "You are generating a short, descriptive title for a chat conversation.\n"
+            "The title should be:\n"
+            "- At most 8 words\n"
+            "- No quotes\n"
+            "- Capitalized like a document title\n\n"
+            f"User's first question:\n{text}\n\n"
+            "Return ONLY the title."
+        )
+        resp = await llm.ainvoke([HumanMessage(content=prompt)])
+        title = (resp.content or "").strip()
+        if not title:
+            title = (text[:60] + "...") if len(text) > 60 else text
+        return title[:120]
+    except Exception:
+        return (text[:60] + "...") if len(text) > 60 else text
+
+
 @router.post("/conversations")
 async def create_conversation(
     request: ConversationCreateRequest,
     user = Depends(get_current_user)
 ):
-    """Create a new conversation"""
+    """Create a new conversation. Title is LLM-generated from first_message when not provided."""
     try:
         supabase = get_supabase_client()
         manager = ConversationManager(supabase)
-        result = manager.create_conversation(user.id, request.project_id, request.title)
-        
+
+        title = request.title
+        if not title:
+            # Prefer using first_message to generate a title
+            title = await _generate_conversation_title(request.first_message or "")
+
+        result = manager.create_conversation(user.id, request.project_id, title)
+
         if not result:
             raise HTTPException(status_code=500, detail="Failed to create conversation")
             

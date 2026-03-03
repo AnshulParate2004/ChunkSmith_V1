@@ -166,6 +166,42 @@ async def delete_project(project_id: str, user = Depends(get_current_user)):
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@router.delete("/{project_id}/documents/{document_id}")
+async def delete_document(project_id: str, document_id: str, user = Depends(get_current_user)):
+    """
+    Shadow/soft delete a single processed document in a project.
+    Storage buckets and vector store are NOT deleted - rows are just hidden.
+    """
+    try:
+        supabase = get_supabase_client()
+        repo = ProjectRepository(supabase)
+
+        # Ensure the project belongs to the current user
+        user_id = str(user.id) if hasattr(user, "id") else None
+        if not user_id:
+            raise HTTPException(status_code=401, detail="User not authenticated")
+
+        project_row = repo.get_project(project_id)
+        if not project_row:
+            raise HTTPException(status_code=404, detail="Project not found")
+        if project_row.get("user_id") and str(project_row["user_id"]) != user_id:
+            raise HTTPException(status_code=403, detail="Not authorized to modify this project")
+
+        # Soft delete the document row
+        repo.soft_delete_document(document_id=document_id, project_id=project_id)
+
+        return {
+            "success": True,
+            "message": f"Document '{document_id}' deleted (soft delete - hidden from listings)",
+            "project_id": project_id,
+            "document_id": document_id,
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @router.get("/download-all")
 async def download_all_projects(user = Depends(get_current_user)):
     """Download ALL projects data as a single ZIP file"""

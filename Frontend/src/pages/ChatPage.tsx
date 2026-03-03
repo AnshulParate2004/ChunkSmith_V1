@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card } from '@/components/ui/card';
@@ -26,13 +26,23 @@ interface Conversation {
   created_at: string;
 }
 
+interface SidebarDocument {
+  id: string;
+  title: string;
+  created_at?: string;
+}
+
 const ChatPage = () => {
   const { projectId } = useParams<{ projectId: string }>();
   const navigate = useNavigate();
   const { session } = useAuth();
+  const [searchParams] = useSearchParams();
 
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [activeConversationId, setActiveConversationId] = useState<string | null>(null);
+
+  const [sidebarMode, setSidebarMode] = useState<"chats" | "documents">("chats");
+  const [sidebarDocuments, setSidebarDocuments] = useState<SidebarDocument[]>([]);
 
   const [messages, setMessages] = useState<Message[]>([]);
   const [currentImages, setCurrentImages] = useState<ChatImage[]>([]);
@@ -55,12 +65,13 @@ const ChatPage = () => {
     }
   }, [activeConversationId, conversations.length]);
 
-  // Fetch conversations on load
+  // Fetch conversations and documents on load
   useEffect(() => {
     if (projectId && session?.access_token) {
       loadConversations();
+      loadDocuments();
     }
-  }, [projectId, session?.access_token]);
+  }, [projectId, session?.access_token, searchParams]);
 
   // Fetch messages when active conversation changes
   useEffect(() => {
@@ -95,11 +106,33 @@ const ChatPage = () => {
       setConversations(response.conversations);
 
       // Auto-select most recent if available
-      if (response.conversations.length > 0 && !activeConversationId) {
-        setActiveConversationId(response.conversations[0].id);
+      const initialId = searchParams.get('conversationId');
+      if (response.conversations.length > 0) {
+        if (initialId) {
+          setActiveConversationId(initialId);
+        } else if (!activeConversationId) {
+          setActiveConversationId(response.conversations[0].id);
+        }
       }
     } catch (error) {
       toast.error('Failed to load conversations');
+    }
+  };
+
+  // Load documents for sidebar (documents mode) using project details
+  const loadDocuments = async () => {
+    if (!projectId || !session?.access_token) return;
+    try {
+      const response = await apiService.getProjectDetails(projectId);
+      const docs: SidebarDocument[] =
+        response.pdf_files?.map((pdf: any) => ({
+          id: pdf.id || pdf.filename || "",
+          title: pdf.filename || "",
+          created_at: pdf.created_at,
+        })) || [];
+      setSidebarDocuments(docs);
+    } catch (error) {
+      console.error("Failed to load documents for sidebar:", error);
     }
   };
 
@@ -164,7 +197,7 @@ const ChatPage = () => {
     // specific check: if no active conversation, create one
     if (!targetConversationId) {
       try {
-        const response = await apiService.createConversation(projectId!, message.substring(0, 30) + "...", session.access_token);
+        const response = await apiService.createConversation(projectId!, message, session.access_token);
         targetConversationId = response.conversation.id;
         setConversations([response.conversation, ...conversations]);
         setActiveConversationId(targetConversationId);
@@ -391,10 +424,18 @@ const ChatPage = () => {
         <ResizablePanel defaultSize={20} minSize={15} maxSize={30} className="hidden md:block">
           <ChatSidebar
             conversations={conversations}
-            activeId={activeConversationId}
-            onSelect={setActiveConversationId}
-            onNew={handleNewChat}
-            onDelete={handleDeleteConversation}
+            documents={sidebarDocuments}
+            activeConversationId={activeConversationId}
+            mode={sidebarMode}
+            onModeChange={setSidebarMode}
+            onSelectConversation={setActiveConversationId}
+            onSelectDocument={(docId) => {
+              if (projectId) {
+                navigate(`/project/${projectId}?documentId=${docId}`);
+              }
+            }}
+            onNewChat={handleNewChat}
+            onDeleteConversation={handleDeleteConversation}
           />
         </ResizablePanel>
 

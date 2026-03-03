@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { Plus, MessageSquare, Globe, Settings, FileText, Sparkles, Upload, Search, X, Clock, CheckCircle, Loader2, ArrowLeft, Download, Eye } from 'lucide-react';
+import { Plus, MessageSquare, Globe, Settings, FileText, Sparkles, Upload, Search, X, Clock, CheckCircle, Loader2, ArrowLeft, Download, Eye, Trash2 } from 'lucide-react';
 import { ChatInterface } from '@/components/Chat/ChatInterface';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -12,6 +12,7 @@ import { apiService } from '@/services/api';
 import { useToast } from '@/hooks/use-toast';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Badge } from '@/components/ui/badge';
+import { useAuth } from '@/context/AuthContext';
 
 interface UploadedDoc {
   name: string;
@@ -20,6 +21,12 @@ interface UploadedDoc {
   uploadedAt: string;
   status?: 'processing' | 'complete' | 'error';
   projectId?: string;
+}
+
+interface ConversationSummary {
+  id: string;
+  title: string;
+  created_at: string;
 }
 
 interface ProcessedDocument {
@@ -33,14 +40,16 @@ const ProjectPage = () => {
   const { projectId } = useParams();
   const navigate = useNavigate();
   const { toast } = useToast();
+  const { session } = useAuth();
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [isUploading, setIsUploading] = useState(false);
-  const [conversations, setConversations] = useState<string[]>([]);
+  const [conversations, setConversations] = useState<ConversationSummary[]>([]);
   const [uploadedDocs, setUploadedDocs] = useState<UploadedDoc[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedDoc, setSelectedDoc] = useState<UploadedDoc | null>(null);
   const [isDetailsOpen, setIsDetailsOpen] = useState(false);
   const [activeChatDoc, setActiveChatDoc] = useState<string | null>(null);
+  const [sidebarMode, setSidebarMode] = useState<"documents" | "conversations">("documents");
 
   const [settings, setSettings] = useState<ProcessSettings>({
     languages: 'english',
@@ -89,6 +98,20 @@ const ProjectPage = () => {
     loadDocuments();
   }, [projectId]);
 
+  // Load conversation history for this project (for sidebar + summary)
+  useEffect(() => {
+    const loadConversations = async () => {
+      if (!projectId || !session?.access_token) return;
+      try {
+        const response = await apiService.listConversations(projectId, session.access_token);
+        setConversations(response.conversations || []);
+      } catch (error) {
+        console.error('Failed to load conversations:', error);
+      }
+    };
+    loadConversations();
+  }, [projectId, session?.access_token]);
+
   const projectTitle = projectId || 'Project';
 
   const filteredDocs = uploadedDocs.filter(doc =>
@@ -125,7 +148,31 @@ const ProjectPage = () => {
     navigate(`/processing/${doc.documentId}?projectId=${projectId}`);
   };
 
+  const handleDeleteDocument = async (doc: UploadedDoc) => {
+    if (!projectId) return;
+    const confirmed = window.confirm(
+      `Delete processed document "${doc.name}" from this project? (This will hide it from the list but keep underlying files for recovery.)`
+    );
+    if (!confirmed) return;
+
+    try {
+      await apiService.deleteDocument(projectId, doc.documentId);
+      setUploadedDocs(prev => prev.filter(d => d.documentId !== doc.documentId));
+      toast({
+        title: 'Document deleted',
+        description: `"${doc.name}" has been removed from this project.`,
+      });
+    } catch (error: any) {
+      toast({
+        title: 'Failed to delete document',
+        description: error.message || 'Unknown error',
+        variant: 'destructive',
+      });
+    }
+  };
+
   const handleNewConversation = () => {
+    // Start a chat within this project page, using the first completed document
     const completeDocs = uploadedDocs.filter(doc => doc.status === 'complete');
     if (completeDocs.length > 0) {
       setActiveChatDoc(completeDocs[0].documentId);
@@ -133,7 +180,7 @@ const ProjectPage = () => {
       toast({
         title: "No documents ready",
         description: "Please upload and process a document first",
-        variant: "destructive"
+        variant: "destructive",
       });
     }
   };
@@ -186,17 +233,64 @@ const ProjectPage = () => {
       {/* Sidebar */}
       <aside className="w-64 border-r border-border bg-card/50 backdrop-blur-sm">
         <div className="p-6">
-          <div className="flex items-center gap-2 mb-8">
-            <Sparkles className="w-6 h-6 text-primary" />
-            <h1 className="text-xl font-bold gradient-text">ChunkSmith</h1>
+          {/* Brand row, similar to ChatGPT icon + name */}
+          <div className="flex items-center gap-2 mb-6">
+            <div className="w-7 h-7 rounded-full bg-primary/10 flex items-center justify-center">
+              <Sparkles className="w-4 h-4 text-primary" />
+            </div>
+            <h1 className="text-sm font-semibold text-foreground">ChunkSmith</h1>
           </div>
 
-          <div className="flex items-center justify-between mb-4">
-            <h3 className="text-sm font-semibold text-muted-foreground">Documents</h3>
-            <span className="text-xs text-muted-foreground">{uploadedDocs.length}</span>
+          {/* Primary actions like ChatGPT sidebar */}
+          <div className="space-y-2 mb-6">
+            <Button
+              variant="default"
+              className="w-full justify-start gap-2 text-sm"
+              onClick={handleNewConversation}
+            >
+              <Plus className="w-4 h-4" />
+              New chat
+            </Button>
+            <Button
+              variant="ghost"
+              className="w-full justify-start gap-2 text-sm"
+              onClick={() => navigate(`/search?projectId=${projectId}`)}
+            >
+              <Search className="w-4 h-4" />
+              Search chats
+            </Button>
+            <Button
+              variant="ghost"
+              className="w-full justify-start gap-2 text-sm"
+              onClick={() =>
+                setSidebarMode(sidebarMode === "documents" ? "conversations" : "documents")
+              }
+            >
+              {sidebarMode === "documents" ? (
+                <>
+                  <MessageSquare className="w-4 h-4" />
+                  Conversations
+                </>
+              ) : (
+                <>
+                  <FileText className="w-4 h-4" />
+                  Documents
+                </>
+              )}
+            </Button>
           </div>
 
-          {uploadedDocs.length > 0 && (
+          {/* Sidebar list area: toggles between documents and conversations */}
+          <div className="flex items-center justify-between mb-2">
+            <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
+              {sidebarMode === "documents" ? "Your documents" : "Your conversations"}
+            </h3>
+            <span className="text-xs text-muted-foreground">
+              {sidebarMode === "documents" ? uploadedDocs.length : conversations.length}
+            </span>
+          </div>
+
+          {sidebarMode === "documents" && uploadedDocs.length > 0 && (
             <div className="relative mb-4">
               <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-muted-foreground" />
               <Input
@@ -217,38 +311,89 @@ const ProjectPage = () => {
           )}
 
           <div className="space-y-2">
-            {uploadedDocs.length === 0 ? (
-              <p className="text-xs text-muted-foreground text-center py-4">
-                No documents uploaded yet
-              </p>
-            ) : filteredDocs.length === 0 ? (
-              <p className="text-xs text-muted-foreground text-center py-4">
-                No documents match your search
-              </p>
+            {sidebarMode === "documents" ? (
+              <>
+                {uploadedDocs.length === 0 ? (
+                  <p className="text-xs text-muted-foreground text-center py-4">
+                    No documents uploaded yet
+                  </p>
+                ) : filteredDocs.length === 0 ? (
+                  <p className="text-xs text-muted-foreground text-center py-4">
+                    No documents match your search
+                  </p>
+                ) : (
+                  filteredDocs.map((doc, index) => (
+                    <div
+                      key={`${doc.documentId}-${index}`}
+                      className="w-full flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-muted transition-colors group"
+                    >
+                      <button
+                        onClick={() => handleDocClick(doc)}
+                        className="flex-1 flex items-center gap-3 text-left"
+                      >
+                        <div className="relative">
+                          <FileText className="w-4 h-4 text-primary flex-shrink-0" />
+                          <div className="absolute -top-1 -right-1">
+                            {getStatusIcon(doc.status)}
+                          </div>
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className="text-sm font-medium truncate block">
+                              {doc.name}
+                            </span>
+                            {getStatusBadge(doc.status)}
+                          </div>
+                          <span className="text-xs text-muted-foreground">
+                            {(doc.size / 1024 / 1024).toFixed(2)} MB
+                          </span>
+                        </div>
+                      </button>
+                      <button
+                        onClick={() => handleDeleteDocument(doc)}
+                        className="opacity-0 group-hover:opacity-100 transition-opacity text-destructive hover:text-destructive flex-shrink-0"
+                        title="Delete processed document"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </div>
+                  ))
+                )}
+              </>
             ) : (
-              filteredDocs.map((doc, index) => (
-                <button
-                  key={`${doc.documentId}-${index}`}
-                  onClick={() => handleDocClick(doc)}
-                  className="w-full flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-muted transition-colors text-left group"
-                >
-                  <div className="relative">
-                    <FileText className="w-4 h-4 text-primary flex-shrink-0" />
-                    <div className="absolute -top-1 -right-1">
-                      {getStatusIcon(doc.status)}
-                    </div>
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <span className="text-sm font-medium truncate block">{doc.name}</span>
-                      {getStatusBadge(doc.status)}
-                    </div>
-                    <span className="text-xs text-muted-foreground">
-                      {(doc.size / 1024 / 1024).toFixed(2)} MB
-                    </span>
-                  </div>
-                </button>
-              ))
+              <>
+                {conversations.length === 0 ? (
+                  <p className="text-xs text-muted-foreground text-center py-4">
+                    No conversations yet
+                  </p>
+                ) : (
+                  conversations.map((conv) => (
+                    <button
+                      key={conv.id}
+                      onClick={() =>
+                        navigate(`/chat/${projectId}?conversationId=${conv.id}`)
+                      }
+                      className="w-full text-left px-3 py-2 rounded-lg hover:bg-muted transition-colors"
+                    >
+                      <div className="flex items-center gap-2">
+                        <div className="w-6 h-6 rounded-full bg-primary/10 flex items-center justify-center">
+                          <MessageSquare className="w-3 h-3 text-primary" />
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <div className="text-sm font-medium truncate">
+                            {conv.title || "Conversation"}
+                          </div>
+                          <div className="text-[10px] text-muted-foreground">
+                            {conv.created_at
+                              ? new Date(conv.created_at).toLocaleString()
+                              : ""}
+                          </div>
+                        </div>
+                      </div>
+                    </button>
+                  ))
+                )}
+              </>
             )}
           </div>
         </div>
@@ -277,7 +422,13 @@ const ProjectPage = () => {
                 </div>
                 <div className="flex-1 min-h-0">
                   <div className="glass-card p-6 h-full">
-                    <ChatInterface documentId={activeChatDoc} projectId={projectId!} />
+                    <ChatInterface
+                      documentId={activeChatDoc}
+                      projectId={projectId!}
+                      onConversationCreated={(conv) =>
+                        setConversations((prev) => [conv, ...prev])
+                      }
+                    />
                   </div>
                 </div>
               </div>
@@ -328,13 +479,24 @@ const ProjectPage = () => {
                   </div>
                 ) : (
                   <div className="space-y-4">
-                    {conversations.map((conv, index) => (
-                      <div key={index} className="glass-card p-4 hover:border-primary/50 transition-colors cursor-pointer">
+                    {conversations.map((conv) => (
+                      <button
+                        key={conv.id}
+                        onClick={() => navigate(`/chat/${projectId}?conversationId=${conv.id}`)}
+                        className="w-full text-left glass-card p-4 hover:border-primary/50 transition-colors cursor-pointer"
+                      >
                         <div className="flex items-center gap-3">
                           <MessageSquare className="w-5 h-5 text-primary" />
-                          <span className="font-medium">{conv}</span>
+                          <div>
+                            <span className="font-medium block truncate">
+                              {conv.title || 'Conversation'}
+                            </span>
+                            <span className="text-xs text-muted-foreground">
+                              {conv.created_at ? new Date(conv.created_at).toLocaleString() : ''}
+                            </span>
+                          </div>
                         </div>
-                      </div>
+                      </button>
                     ))}
                   </div>
                 )}
@@ -362,6 +524,10 @@ const ProjectPage = () => {
                 <TabsTrigger value="settings" className="flex-1">
                   <Settings className="w-4 h-4 mr-2" />
                   Settings
+                </TabsTrigger>
+                <TabsTrigger value="search" className="flex-1">
+                  <Search className="w-4 h-4 mr-2" />
+                  Search
                 </TabsTrigger>
               </TabsList>
 
@@ -440,37 +606,21 @@ const ProjectPage = () => {
                     </Button>
                   </div>
                 </div>
+              </TabsContent>
 
+              <TabsContent value="search" className="space-y-4 mt-6">
                 <div>
-                  <div className="flex items-center justify-between mb-3">
-                    <h4 className="text-sm font-semibold">Sources</h4>
-                    <span className="text-xs text-muted-foreground">{uploadedDocs.length}</span>
-                  </div>
-
-                  {uploadedDocs.length === 0 ? (
-                    <p className="text-xs text-muted-foreground text-center py-8">
-                      No sources added yet
-                    </p>
-                  ) : (
-                    <div className="space-y-2">
-                      {uploadedDocs.map((doc, index) => (
-                        <div
-                          key={`source-${doc.documentId}-${index}`}
-                          onClick={() => handleDocClick(doc)}
-                          className="glass-card p-3 text-sm cursor-pointer hover:bg-muted/50 transition-colors"
-                        >
-                          <div className="flex items-center gap-2">
-                            <FileText className="w-4 h-4 text-primary" />
-                            <span className="flex-1 truncate">{doc.name}</span>
-                            {getStatusIcon(doc.status)}
-                          </div>
-                          <p className="text-xs text-muted-foreground mt-1">
-                            {(doc.size / 1024 / 1024).toFixed(2)} MB
-                          </p>
-                        </div>
-                      ))}
-                    </div>
-                  )}
+                  <h4 className="text-sm font-semibold mb-2">Search processed documents</h4>
+                  <p className="text-xs text-muted-foreground mb-4">
+                    Run semantic search over all processed chunks in this project.
+                  </p>
+                  <Button
+                    className="w-full gap-2"
+                    onClick={() => navigate(`/search?projectId=${projectId}`)}
+                  >
+                    <Search className="w-4 h-4" />
+                    Open search
+                  </Button>
                 </div>
               </TabsContent>
 

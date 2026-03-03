@@ -18,10 +18,11 @@ interface Message {
 interface ChatInterfaceProps {
   documentId: string;
   projectId: string;
+  onConversationCreated?: (conversation: any) => void;
 }
 
-export const ChatInterface = ({ documentId, projectId }: ChatInterfaceProps) => {
-  const [sessionId, setSessionId] = useState<string | null>(null);
+export const ChatInterface = ({ documentId, projectId, onConversationCreated }: ChatInterfaceProps) => {
+  const [conversationId, setConversationId] = useState<string | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
   const [currentImages, setCurrentImages] = useState<ChatImage[]>([]);
   const [inputMessage, setInputMessage] = useState('');
@@ -32,10 +33,6 @@ export const ChatInterface = ({ documentId, projectId }: ChatInterfaceProps) => 
   const streamingMessageIdRef = useRef<string>('');
 
   useEffect(() => {
-    if (projectId) {
-      initializeChat();
-    }
-
     return () => {
       if (eventSourceRef.current) {
         eventSourceRef.current.close();
@@ -51,20 +48,6 @@ export const ChatInterface = ({ documentId, projectId }: ChatInterfaceProps) => 
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   };
 
-  const initializeChat = async () => {
-    if (!projectId) return;
-
-    try {
-      // Use projectId for chat initialization (backend expects project_id)
-      const response = await apiService.initializeChat(projectId);
-      setSessionId(response.session_id);
-      toast.success('Chat initialized successfully');
-    } catch (error) {
-      toast.error('Failed to initialize chat');
-      console.error(error);
-    }
-  };
-
   const updateStep = (id: string, updates: Partial<StreamingStep>) => {
     setStreamingSteps(prev => prev.map(step =>
       step.id === id ? { ...step, ...updates } : step
@@ -75,12 +58,7 @@ export const ChatInterface = ({ documentId, projectId }: ChatInterfaceProps) => 
     setStreamingSteps(prev => [...prev, step]);
   };
 
-  const startStreaming = (message: string) => {
-    if (!sessionId) {
-      toast.error('Chat not initialized');
-      return;
-    }
-
+  const startStreaming = async (message: string) => {
     // Get auth token from localStorage
     const session = localStorage.getItem('session');
     let token = '';
@@ -98,6 +76,27 @@ export const ChatInterface = ({ documentId, projectId }: ChatInterfaceProps) => 
     if (!token) {
       toast.error('Please login to use chat');
       return;
+    }
+
+    // Ensure we have (or create) a persistent conversation
+    let targetConversationId = conversationId;
+    if (!targetConversationId) {
+      try {
+        const response = await apiService.createConversation(
+          projectId,
+          message,
+          token
+        );
+        targetConversationId = response.conversation.id;
+        setConversationId(targetConversationId);
+        if (onConversationCreated) {
+          onConversationCreated(response.conversation);
+        }
+      } catch (e) {
+        console.error('Failed to create conversation:', e);
+        toast.error('Failed to start conversation');
+        return;
+      }
     }
 
     setIsStreaming(true);
@@ -123,11 +122,11 @@ export const ChatInterface = ({ documentId, projectId }: ChatInterfaceProps) => 
     };
     setMessages(prev => [...prev, assistantMsg]);
 
-    // Connect to SSE with token in query params
+    // Connect to SSE with token in query params using persistent conversation endpoint
     const encodedMessage = encodeURIComponent(message);
     const encodedToken = encodeURIComponent(token);
     const eventSource = new EventSource(
-      `https://chunksmith.onrender.com/api/chat/stream/${sessionId}?message=${encodedMessage}&token=${encodedToken}`
+      `https://chunksmith.onrender.com/api/chat/conversations/${targetConversationId}/message_stream?message=${encodedMessage}&token=${encodedToken}`
     );
     eventSourceRef.current = eventSource;
 
@@ -228,7 +227,7 @@ export const ChatInterface = ({ documentId, projectId }: ChatInterfaceProps) => 
 
           setMessages(prev => prev.map(msg =>
             msg.id === streamingMessageIdRef.current
-              ? { ...msg } // status is implicitly handled by completion
+              ? { ...msg }
               : msg
           ));
           break;
@@ -258,16 +257,9 @@ export const ChatInterface = ({ documentId, projectId }: ChatInterfaceProps) => 
   };
 
   const handleClearHistory = async () => {
-    if (!sessionId) return;
-
-    try {
-      await apiService.clearChatHistory(sessionId);
-      setMessages([]);
-      setCurrentImages([]);
-      toast.success('Chat history cleared');
-    } catch (error) {
-      toast.error('Failed to clear history');
-    }
+    // For conversation-based chat, just clear local view.
+    setMessages([]);
+    setCurrentImages([]);
   };
 
   return (
