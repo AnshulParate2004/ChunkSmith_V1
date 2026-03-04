@@ -43,11 +43,11 @@ timeout /t 5 >nul
 
 echo.
 echo Opening App in Browser...
-start http://localhost
+start https://chunksmith.onrender.com
 
 echo.
 echo ============================================
-echo App is running at http://localhost
-echo Backend API at http://localhost:8000
+echo App is running at https://chunksmith.onrender.com
+echo Backend API at https://chunksmith.onrender.com
 echo ============================================
 pause
