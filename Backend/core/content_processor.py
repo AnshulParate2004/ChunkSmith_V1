@@ -15,7 +15,7 @@ from config.settings import settings
 from dotenv import load_dotenv
 import logging
 
-logger = logging.getLogger(__name__)
+
 
 load_dotenv()
 
@@ -163,8 +163,7 @@ class ContentProcessor:
                         image_counter['count'] += 1
 
                     except Exception as e:
-                        logger.error(f"Failed to save image {image_counter['count']}: {e}")
-
+                        pass
         return content_data
     
     async def create_ai_enhanced_summary_async(
@@ -249,15 +248,15 @@ TEXT CONTENT:
             llm_structured = self._get_llm_for_key(api_key)
             
             # Make async API call
-            logger.info(f"  > [AI] Chunk {chunk_index}: Sending to Azure OpenAI...")
+
             response = await llm_structured.ainvoke([message])
-            logger.info(f"  > [AI] Chunk {chunk_index}: Success.")
+
             # Convert to dict to avoid Pydantic serializer warnings (parsed field)
             return response.model_dump() if response else None
                 
         except Exception as e:
             # On failure, return None to use raw chunk (no error messages)
-            logger.error(f"  > [AI] Chunk {chunk_index}: FAILED ({str(e)}), using raw chunk data")
+
             return None
     
     async def process_chunks_async(self, chunks_data: List[Dict]) -> List[Optional[Dict]]:
@@ -284,9 +283,9 @@ TEXT CONTENT:
             tasks.append(task)
         
         # Run all tasks concurrently
-        logger.info(f"  ... Dispatching {len(tasks)} async AI tasks ...")
+
         responses = await asyncio.gather(*tasks)
-        logger.info(f"  ... All {len(responses)} AI tasks completed.")
+
         
         return responses
     
@@ -300,7 +299,7 @@ TEXT CONTENT:
         Returns:
             List of LangChain Documents with enhanced summaries
         """
-        logger.info(f"=== [AI PROCESSING START] Processing {len(chunks)} chunks with Azure OpenAI ===")
+
         
         # No longer cleaning - project-based structure keeps data isolated
         
@@ -331,8 +330,7 @@ TEXT CONTENT:
                     if total_images > 0:
                         max_index = max(max_index, total_images)
             except Exception as e:
-                logger.warning(f"Failed to inspect Supabase documents for project {self.project_id}: {e}")
-
+                pass
         start_count = max_index + 1 if max_index > 0 else 1
 
         image_counter = {'count': start_count}
@@ -448,8 +446,7 @@ ORIGINAL TEXT: {content_data['text']}"""
                 )
             
             langchain_documents.append(doc)
-        
-        logger.info(f"=== [AI PROCESSING END] Processed {len(langchain_documents)} chunks ===")
+
         # print(f"Used async processing with {len(self.api_keys)} API key(s)")
         
         return langchain_documents

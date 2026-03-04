@@ -7,7 +7,7 @@ import logging
 import os
 from config.settings import settings
 
-logger = logging.getLogger(__name__)
+
 
 # Statistics
 check_count = 0
@@ -21,12 +21,11 @@ def log_message(message: str, level: str = "INFO"):
     log_msg = f"[{timestamp}] [HealthMonitor] {message}"
     
     if level == "ERROR":
-        logger.error(log_msg)
+        pass
     elif level == "SUCCESS":
-        logger.info(log_msg)
+        pass
     else:
-        logger.info(log_msg)
-
+        pass
 
 def get_health_endpoint() -> str:
     """

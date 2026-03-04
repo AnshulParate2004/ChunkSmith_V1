@@ -13,7 +13,7 @@ import logging
 
 # Configure logging (suppress verbose retry logs)
 configure_logging()
-logger = logging.getLogger(__name__)
+
 
 
 
@@ -64,9 +64,9 @@ app.include_router(router, prefix="/api", tags=["documents"])
 @app.middleware("http")
 async def log_requests(request: Request, call_next):
     """Log all incoming HTTP requests and their responses."""
-    logger.info(f"[REQUEST] {request.method} {request.url.path}")
+
     response = await call_next(request)
-    logger.info(f"[RESPONSE] {request.method} {request.url.path} -> {response.status_code}")
+
     return response
 
 # -------------------------------

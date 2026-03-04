@@ -3,9 +3,16 @@ import json
 import asyncio
 import warnings
 from pathlib import Path
-from typing import List, Dict, AsyncGenerator, Optional, Union
+from typing import List, Dict, AsyncGenerator, Optional, Union, Annotated, Literal
+from typing_extensions import TypedDict
+import operator
 
-from langchain_core.messages import HumanMessage, AIMessage, SystemMessage
+from langchain_core.messages import HumanMessage, AIMessage, SystemMessage, BaseMessage, ToolMessage
+from langchain_core.tools import tool
+from langgraph.graph import StateGraph, START, END
+from langgraph.graph.message import add_messages
+from langgraph.prebuilt import ToolNode
+
 from langchain_openai import AzureChatOpenAI
 from supabase import create_client
 from utils.vector_store import VectorStoreManager
@@ -13,6 +20,7 @@ from config.settings import settings
 from dotenv import load_dotenv
 from pydantic import BaseModel, Field
 from tavily import TavilyClient
+import logging
 
 
 load_dotenv()
@@ -41,24 +49,14 @@ class ChatResponse(BaseModel):
     )
 
 
-class ToolPlan(BaseModel):
-    """Planner output deciding which tools to use and with what queries."""
-    use_rag: bool = Field(
-        default=True,
-        description="Whether to use the project RAG retrieval tool for this question.",
-    )
-    rag_query: Optional[str] = Field(
-        default=None,
-        description="Refined query to use for the RAG tool. If null, use the user's question.",
-    )
-    use_web: bool = Field(
-        default=False,
-        description="Whether to use the Tavily web search tool for this question.",
-    )
-    web_query: Optional[str] = Field(
-        default=None,
-        description="Refined query to use for the web search tool. If null, use the user's question.",
-    )
+class AgentState(TypedDict):
+    """LangGraph State object"""
+    messages: Annotated[list[BaseMessage], add_messages]
+    context_chunks: List[Dict]
+    image_index: Dict[int, Dict]
+    project_id: str  # For the RAG tool to know which collection to hit
+    vector_manager: VectorStoreManager
+    vectorstore: object
 
 
 class ChatAgent:
@@ -90,85 +88,198 @@ class ChatAgent:
         
         if not self.azure_api_key or not self.azure_endpoint:
             raise ValueError("AZURE_OPENAI_API_KEY and AZURE_OPENAI_ENDPOINT must be set in environment")
-            
-        logger.info(f"ChatAgent initialized with Azure OpenAI endpoint: {self.azure_endpoint}")
+
 
         # Initialize shown images tracking
         self.shown_images = set()
 
-        # Initialize base LLM for structured output using Azure OpenAI
-        self.structured_llm = AzureChatOpenAI(
+        # Initialize Model (No structured output globally here, we bind tools instead)
+        self.llm = AzureChatOpenAI(
             azure_endpoint=self.azure_endpoint,
             api_key=self.azure_api_key,
             azure_deployment=settings.AZURE_OPENAI_CHAT_MODEL,
             api_version=self.azure_api_version,
             temperature=0.2,
-        ).with_structured_output(ChatResponse)
-
-        # Planner LLM that decides which tools (RAG, web) to use and how
-        self.planner_llm = AzureChatOpenAI(
-            azure_endpoint=self.azure_endpoint,
-            api_key=self.azure_api_key,
-            azure_deployment=settings.AZURE_OPENAI_CHAT_MODEL,
-            api_version=self.azure_api_version,
-            temperature=0.0,
-        ).with_structured_output(ToolPlan)
+        )
 
         # Set paths
         self.image_dir = str(settings.get_project_image_dir(project_id))
-        
+
         # Load vector store (Supabase/Qdrant)
         try:
             self.vector_manager = VectorStoreManager(embedding_model=settings.AZURE_OPENAI_EMBEDDING_MODEL)
             self.vectorstore = self.vector_manager.load_vector_store(
                 collection_name=project_id
             )
-            logger.info(f"Vector store loaded successfully for project: {project_id}")
+
         except Exception as e:
-            logger.error(f"Error loading vector store for project {project_id}: {e}")
+
             raise Exception(
                 f"Failed to initialize chat: Vector store not available for project '{project_id}'. "
                 f"Make sure documents have been processed first."
             ) from e
-        
-        # Optimized system prompt for dual-tool (RAG + web search) agent
-        self.system_prompt = """You are an AI research assistant with two main tools:
 
-1) PROJECT RAG TOOL
-   - Uses the provided project context (text, image descriptions, table descriptions) to answer questions.
-   - This is your PRIMARY source whenever the question is about the project documents.
+        # Build the LangGraph Application
+        self.graph = self._build_graph()
 
-2) WEB SEARCH TOOL (Tavily)
-   - Used only when the project context does NOT contain enough information (for example, general knowledge, up-to-date facts, or clearly external questions).
-   - When web search is used, combine it carefully with any relevant project context and clearly explain the answer.
+    def _build_graph(self):
+        """Construct the LangGraph StateGraph"""
+        # Shared mutable containers written by tools, read by chat_stream after the
+        # graph finishes.  They survive LangGraph's internal state copies because they
+        # are referenced through `self`, not through the copied state dict.
+        self._current_chunks: List[Dict] = []
+        self._current_image_index: Dict[int, Dict] = {}
 
-INSTRUCTIONS:
-1. FIRST, try to answer using the project RAG context.
-2. If the project context is clearly insufficient, mentally call the WEB SEARCH TOOL and use those results.
-3. Always check the AVAILABLE IMAGES section and, whenever they would genuinely help the user understand the answer, INCLUDE image_references.
-4. Return your response in structured format with:
-   - answer: Your complete answer to the question.
-   - image_references: List of image indices to show (see rules below).
-5. Only reference images that directly support your answer and are factually consistent with the text.
-6. When tables contain relevant data, describe the key information from the table descriptions provided.
-7. If the answer isn't in the context or web search, say so honestly.
-8. Be concise but thorough.
-9. Reference page numbers when available.
+        # ── Tool Definitions ──────────────────────────────────────────────────
+        @tool
+        def project_search(query: str) -> str:
+            """
+            Search the project's processed documents for context regarding the user's query.
+            Call this tool ONCE for the user's question. Do NOT call it again with a similar query.
+            """
+            results = self.vector_manager.search(
+                vectorstore=self.vectorstore, query=query, k=3
+            )
 
-IMPORTANT:
-- Use image INDEX numbers from the "Available Images" list (0-based indexing).
-- Prefer showing 1–3 of the MOST USEFUL images, but you may include up to 5 when clearly helpful.
-- If no image clearly helps, leave image_references as an empty list.
-- You have IMAGE DESCRIPTIONS and TABLE DESCRIPTIONS – use these to answer.
-- If the same information appears in multiple images, only reference one.
+            def parse_json(val, default):
+                if isinstance(val, str):
+                    try:
+                        return json.loads(val)
+                    except Exception:
+                        return default
+                return val or default
 
-CONTEXT:
-{context}
+            context_chunks = []
+            for doc in results:
+                context_chunks.append({
+                    "content": doc.page_content,
+                    "original_text": doc.metadata.get("original_text", ""),
+                    "ai_summary": doc.metadata.get("ai_summary", ""),
+                    "image_paths": parse_json(doc.metadata.get("image_paths"), []),
+                    "image_base64": parse_json(doc.metadata.get("image_base64"), []),
+                    "image_interpretation": parse_json(doc.metadata.get("image_interpretation"), []),
+                    "table_interpretation": parse_json(doc.metadata.get("table_interpretation"), []),
+                    "page_numbers": parse_json(doc.metadata.get("page_numbers"), []),
+                    "tables": parse_json(doc.metadata.get("raw_tables_html"), [])
+                })
 
-CONVERSATION HISTORY:
-{chat_history}
+            # Persist to instance-level shared dicts so chat_stream can read them
+            # after the graph completes (LangGraph copies state, so tool-side mutations
+            # to the state dict are not visible outside the tool call).
+            self._current_chunks.extend(context_chunks)
+            new_images = self.build_image_index(context_chunks)
+            self._current_image_index.update(new_images)
 
-Answer the user's question based on the tools and context above."""
+            # Return the formatted context so the LLM can use it
+            formatted = self.format_context(context_chunks, self._current_image_index)
+            return f"Found {len(context_chunks)} sections from project documents:\n\n{formatted}"
+
+        @tool
+        def web_search(query: str) -> str:
+            """
+            Search the web for general knowledge or up-to-date facts.
+            ONLY use this when project_search explicitly returned no useful results.
+            Do NOT use this for questions about the project content.
+            """
+            results = self.web_search_logic(query, max_results=3)
+            if not results:
+                return "No web results found."
+
+            formatted = ["=== WEB SEARCH RESULTS ==="]
+            for i, item in enumerate(results, 1):
+                title = item.get("title") or f"Result {i}"
+                snippet = item.get("content") or item.get("snippet") or ""
+                url = item.get("url") or ""
+                formatted.append(f"- {title}: {snippet} (URL: {url})")
+            return "\n".join(formatted)
+
+        tools = [project_search, web_search]
+        tool_node = ToolNode(tools)
+        llm_with_tools = self.llm.bind_tools(tools)
+        final_answer_llm = self.llm.with_structured_output(ChatResponse)
+
+        # ── Nodes ─────────────────────────────────────────────────────────────
+        def call_model(state: AgentState):
+            """Decide whether to call a tool or proceed to final answer."""
+            messages = state["messages"]
+
+            # Count how many times each tool has already been called so we can
+            # prevent the agent from calling the same tool twice.
+            tool_call_counts: Dict[str, int] = {}
+            for msg in messages:
+                if isinstance(msg, AIMessage) and msg.tool_calls:
+                    for tc in msg.tool_calls:
+                        tool_call_counts[tc["name"]] = tool_call_counts.get(tc["name"], 0) + 1
+
+            already_searched = tool_call_counts.get("project_search", 0) > 0
+            already_web = tool_call_counts.get("web_search", 0) > 0
+
+            system_content = (
+                "You are an AI research assistant with two tools:\n"
+                "  1. project_search – searches the user's uploaded project documents.\n"
+                "  2. web_search – searches the live web via Tavily.\n"
+                "\nRULES (follow strictly):\n"
+                "- Call project_search EXACTLY ONCE per user question. Never repeat it.\n"
+                "- Only call web_search if project_search returned no useful results AND the question requires external facts.\n"
+                "- Call web_search at most ONCE.\n"
+                "- Once you have tool results, stop calling tools and go straight to your answer.\n"
+            )
+            if already_searched:
+                system_content += (
+                    "\n⚠ You have ALREADY called project_search. Do NOT call it again. "
+                    "Use the results you already received to answer the question.\n"
+                )
+            if already_web:
+                system_content += (
+                    "\n⚠ You have ALREADY called web_search. Do NOT call it again.\n"
+                )
+            if already_searched and already_web:
+                system_content += (
+                    "\n⚠ You have used both tools. DO NOT call any more tools. "
+                    "Generate your final answer now.\n"
+                )
+
+            response = llm_with_tools.invoke(
+                [SystemMessage(content=system_content)] + messages
+            )
+            return {"messages": [response]}
+
+        def generate_final(state: AgentState):
+            """Force structured ChatResponse output once the tool loop is complete."""
+            system_msg = SystemMessage(content=(
+                "You are a final response compiler. "
+                "Review the conversation including tool outputs and answer the user's question concisely. "
+                "Reference page numbers when known. "
+                "If tool outputs mention 'Image N:' entries, include the relevant indices in image_references."
+            ))
+            response: ChatResponse = final_answer_llm.invoke(
+                [system_msg] + state["messages"]
+            )
+            return {
+                "messages": [
+                    AIMessage(
+                        content=response.answer,
+                        additional_kwargs={"chat_response": response.model_dump()}
+                    )
+                ]
+            }
+
+        def should_continue(state: AgentState) -> Literal["tools", "generate_final"]:
+            last = state["messages"][-1]
+            if isinstance(last, AIMessage) and last.tool_calls:
+                return "tools"
+            return "generate_final"
+
+        # ── Graph Assembly ────────────────────────────────────────────────────
+        workflow = StateGraph(AgentState)
+        workflow.add_node("agent", call_model)
+        workflow.add_node("tools", tool_node)
+        workflow.add_node("generate_final", generate_final)
+        workflow.add_edge(START, "agent")
+        workflow.add_conditional_edges("agent", should_continue, ["tools", "generate_final"])
+        workflow.add_edge("tools", "agent")
+        workflow.add_edge("generate_final", END)
+        return workflow.compile()
 
 
     def _get_history(self) -> List[HumanMessage | AIMessage]:
@@ -207,7 +318,7 @@ Answer the user's question based on the tools and context above."""
 
             return history
         except Exception as e:
-            logger.error(f"Error fetching history: {e}")
+
             return []
 
     async def _save_message(self, role: str, content: str, metadata: Optional[Dict] = None):
@@ -228,48 +339,7 @@ Answer the user's question based on the tools and context above."""
                 "metadata": metadata or {},
             }).execute()
         except Exception as e:
-            logger.error(f"Error saving message: {e}")
-
-    def search_relevant_context(self, query: str, k: int = 3) -> List[Dict]:
-        """Search for relevant context in vector store"""
-        results = self.vector_manager.search(
-            vectorstore=self.vectorstore,
-            query=query,
-            k=k
-        )
-
-        context_chunks = []
-        for doc in results:
-            # Parse JSON fields with safety
-            def parse_json(val, default):
-                if isinstance(val, str):
-                    try: return json.loads(val)
-                    except: return default
-                return val or default
-
-            image_paths = parse_json(doc.metadata.get("image_paths"), [])
-            image_base64 = parse_json(doc.metadata.get("image_base64"), [])
-            page_numbers = parse_json(doc.metadata.get("page_numbers"), [])
-            tables = parse_json(doc.metadata.get("raw_tables_html"), [])
-            
-            image_interpretation = parse_json(doc.metadata.get("image_interpretation"), [])
-            table_interpretation = parse_json(doc.metadata.get("table_interpretation"), [])
-            
-            chunk_data = {
-                "content": doc.page_content,
-                "original_text": doc.metadata.get("original_text", ""),
-                "ai_summary": doc.metadata.get("ai_summary", ""),
-                "image_paths": image_paths,
-                "image_base64": image_base64,
-                "image_interpretation": image_interpretation,
-                "table_interpretation": table_interpretation,
-                "page_numbers": page_numbers,
-                "tables": tables
-            }
-            context_chunks.append(chunk_data)
-        
-        return context_chunks
-    
+            pass
     def build_image_index(self, context_chunks: List[Dict]) -> Dict[int, Dict]:
         """Build global image index from all context chunks"""
         image_index = {}
@@ -344,7 +414,7 @@ Answer the user's question based on the tools and context above."""
         
         return "\n".join(formatted)
     
-    def web_search(self, query: str, max_results: int = 5) -> List[Dict]:
+    def web_search_logic(self, query: str, max_results: int = 5) -> List[Dict]:
         """
         Run a web search using Tavily when available.
         Returns a list of result dicts with title/content/url when possible.
@@ -361,7 +431,7 @@ Answer the user's question based on the tools and context above."""
                 return resp.get("results", []) or []
             return resp or []
         except Exception as e:
-            logger.error(f"Web search error: {e}")
+
             return []
 
     async def chat_stream(
@@ -380,201 +450,195 @@ Answer the user's question based on the tools and context above."""
             # Step 0: Save User Message (await to ensure consistency)
             await self._save_message("user", user_message)
 
-            # Fetch history either from external source or Supabase
+            # Format history for state
+            # Convert self._get_history() to LangChain messages if needed. It already yields HumanMessage/AIMessage.
             if external_history is not None:
                 history_msgs = external_history
             else:
                 history_msgs = self._get_history()
-            chat_history_text = self.format_chat_history(history_msgs)
             
-            # Step 1: Ask planner LLM which tools to use and with what queries
-            planner_prompt = (
-                "You are a planning agent that decides which tools to use to answer a user question.\n"
-                "Tools:\n"
-                "1) RAG: Retrieve information from the project documents vector store.\n"
-                "2) WEB: Use Tavily web search for up-to-date or external information.\n\n"
-                "You must decide:\n"
-                "- Whether to use RAG.\n"
-                "- Whether to use WEB.\n"
-                "- Optional refined queries for each tool.\n\n"
-                "Be conservative with WEB: only use it when project documents are clearly insufficient.\n\n"
-                f"User question:\n{user_message}\n\n"
-                f"Recent conversation history:\n{chat_history_text}\n"
-            )
+            # Reset shared chunk/image containers at the start of each request
+            self._current_chunks = []
+            self._current_image_index = {}
 
-            planner_messages = [SystemMessage(content="You output only a JSON plan."), HumanMessage(content=planner_prompt)]
-            plan: ToolPlan = await self.planner_llm.ainvoke(planner_messages)
+            # Initial state dict
+            state = {
+                "messages": history_msgs + [HumanMessage(content=user_message)],
+                "context_chunks": [],
+                "image_index": {},
+                "project_id": self.project_id,
+                "vector_manager": self.vector_manager,
+                "vectorstore": self.vectorstore
+            }
 
+            # Map LangGraph events to Frontend SSE stream by simulating an initial plan
             yield {
                 "type": "planner_plan",
                 "data": {
-                    "use_rag": plan.use_rag,
-                    "use_web": plan.use_web,
-                    "rag_query": plan.rag_query or user_message,
-                    "web_query": plan.web_query or user_message,
-                },
+                    "use_rag": True,
+                    "use_web": True,
+                    "rag_query": "Analyzing request",
+                    "web_query": "Ready if needed"
+                }
             }
 
-            # Step 2: Run tools according to plan
-            context_chunks: List[Dict] = []
-            image_index: Dict[int, Dict] = {}
-
-            if plan.use_rag:
-                rag_query = (plan.rag_query or user_message).strip()
-                yield {
-                    "type": "search_start",
-                    "data": {"message": f"Searching project documents for: {rag_query}"},
-                }
-
-                context_chunks = self.search_relevant_context(rag_query, k=3)
-                image_index = self.build_image_index(context_chunks)
-
-                yield {
-                    "type": "search_complete",
-                    "data": {
-                        "message": f"Found {len(context_chunks)} relevant sections with {len(image_index)} images",
-                        "chunks_count": len(context_chunks),
-                        "images_available": len(image_index),
-                    },
-                }
-
-            web_results: List[Dict] = []
-            if plan.use_web:
-                web_query = (plan.web_query or user_message).strip()
-                yield {
-                    "type": "web_search_start",
-                    "data": {"message": f"Running Tavily web search for: {web_query}"},
-                }
-                web_results = self.web_search(web_query, max_results=5)
-                yield {
-                    "type": "web_search_complete",
-                    "data": {
-                        "message": f"Web search returned {len(web_results)} result(s)",
-                        "results_count": len(web_results),
-                    },
-                }
-
-            # Step 3: Format context (RAG + optional web results)
-            context_text = self.format_context(context_chunks, image_index)
-
-            if web_results:
-                web_lines: List[str] = ["", "=== WEB SEARCH RESULTS ==="]
-                for i, item in enumerate(web_results, 1):
-                    title = item.get("title") or f"Result {i}"
-                    snippet = item.get("content") or item.get("snippet") or ""
-                    url = item.get("url") or ""
-                    web_lines.append(f"- {title}: {snippet[:200]}{'...' if len(snippet) > 200 else ''}")
-                    if url:
-                        web_lines.append(f"  URL: {url}")
-                context_text = context_text + "\n" + "\n".join(web_lines)
+            # Store the final parsed response locally
+            final_chat_response = None
             
-            prompt = self.system_prompt.format(
-                context=context_text,
-                chat_history=chat_history_text
-            )
-            
-            messages = [
-                SystemMessage(content=prompt),
-                HumanMessage(content=user_message)
-            ]
-            
-            # Step 4: Get AI response
-            yield {
-                "type": "response_start",
-                "data": {"message": "Generating response..."}
-            }
-            
-            response: ChatResponse = await self.structured_llm.ainvoke(messages)
-
-            # Step 4: Stream answer
-            answer_text = response.answer
-            chunk_size = 30
-            
-            for i in range(0, len(answer_text), chunk_size):
-                chunk = answer_text[i:i + chunk_size]
-                yield {
-                    "type": "content",
-                    "data": {"content": chunk}
-                }
-                await asyncio.sleep(0.01)
-            
-            # Step 5: Send images and collect filenames for persistence
-            images_sent = 0
-            sent_filenames: List[str] = []
-            if response.image_references:
-                # Unique image indices referenced by the model
-                unique_indices = list(dict.fromkeys(ref.index for ref in response.image_references))
-                # Keep only the most relevant 5 images
-                unique_indices = unique_indices[:5]
+            async for event in self.graph.astream_events(state, version="v2"):
+                kind = event["event"]
                 
-                yield {
-                    "type": "images_found",
-                    "data": {
-                        "message": f"AI referenced {len(unique_indices)} image(s)",
-                        "count": len(unique_indices)
-                    }
-                }
-                
-                for img_idx in unique_indices:
-                    if img_idx in image_index:
-                        img_data = image_index[img_idx]
-                        img_path = img_data['path']
-                        
-                        # DEDUPLICATION: Check if image was already shown in this session
-                        if img_path in self.shown_images:
-                            continue
-                            
-                        # Mark as shown
-                        self.shown_images.add(img_path)
-                        sent_filenames.append(img_data['filename'])
-                        
-                        ext = Path(img_path).suffix.lower()
-                        mime_type = 'image/png' if ext == '.png' else 'image/jpeg'
-                        data_uri = f"data:{mime_type};base64,{img_data['base64']}"
-                        
+                if kind == "on_chain_start":
+                    if event["name"] == "generate_final":
                         yield {
-                            "type": "image",
+                            "type": "response_start",
+                            "data": {"message": "Agent compiling answer"}
+                        }
+                
+                # Yield Tool tracking events (Search & Web)
+                elif kind == "on_tool_start":
+                    tool_name = event["name"]
+                    tool_input = event["data"].get("input", {})
+                    query = tool_input.get("query", "...")
+                    
+                    if tool_name == "project_search":
+                        yield {
+                            "type": "search_start",
                             "data": {
-                                "filename": img_data['filename'],
-                                "data": data_uri,
-                                "path": img_path,
-                                "index": img_idx,
-                                "description": img_data['description']
+                                "message": f"Searching project documents for: {query}",
+                                "query": query
                             }
                         }
-                        images_sent += 1
-                    else:
+                    elif tool_name == "web_search":
+                        yield {
+                            "type": "web_search_start",
+                            "data": {
+                                "message": f"Running Tavily web search for: {query}",
+                                "query": query
+                            }
+                        }
+                        
+                elif kind == "on_tool_end":
+                    tool_name = event["name"]
+                    if tool_name == "project_search":
+                        yield {
+                            "type": "search_complete",
+                            "data": {
+                                "message": f"Completed document search.",
+                                "chunks_count": 0,    # Updated later from state diff if possible, or omit
+                                "images_available": 0,
+                            }
+                        }
+                    elif tool_name == "web_search":
+                        yield {
+                            "type": "web_search_complete",
+                            "data": {"message": "Web search complete", "results_count": 0}
+                        }
+                
+                # Stream the final answer chunks from the generate_final node
+                elif kind == "on_chat_model_stream":
+                    # Only stream if we are inside the generate_final node (or if you want to stream the agent's thoughts)
+                    
+                    # Because we use with_structured_output in generate_final, streaming direct string chunks is tricky in v2 
+                    # without checking Run parameters. If it's yielding standard tokens:
+                    chunk = event["data"]["chunk"]
+                    if isinstance(chunk, AIMessage) and chunk.content:
+                        # Langchain with_structured_output might aggregate this. For now, we simulate streaming 
+                        # below when it finishes, or stream raw tokens if available here.
                         pass
-            
-            # Step 6: Save AI response including image_references and filenames for history display
-            image_refs_payload = [
-                {
-                    "index": ref.index,
-                    "reason": ref.reason,
+                
+                elif kind == "on_chain_end":
+                    if event["name"] == "generate_final":
+                        # Obtain the final state
+                        # Because astream_events yields end of chain events, we can look at the output payload
+                        output = event["data"].get("output", {})
+                        if isinstance(output, dict) and "messages" in output:
+                            last_msg = output["messages"][-1]
+                            if isinstance(last_msg, AIMessage) and "chat_response" in last_msg.additional_kwargs:
+                                final_chat_response = last_msg.additional_kwargs["chat_response"]
+
+            # If we didn't capture the final format somehow, fallback to state
+            # We must run state query
+            if final_chat_response:
+                answer_text = final_chat_response["answer"]
+                chunk_size = 30
+                for i in range(0, len(answer_text), chunk_size):
+                    chunk = answer_text[i:i + chunk_size]
+                    yield {
+                        "type": "content",
+                        "data": {"content": chunk}
+                    }
+                    await asyncio.sleep(0.01)
+                
+                # Use the instance-level shared dicts populated by project_search tool
+                image_index = self._current_image_index
+                context_chunks = self._current_chunks
+                
+                images_sent = 0
+                sent_filenames: List[str] = []
+                image_references = final_chat_response.get("image_references", [])
+                
+                if image_references:
+                    unique_indices = list(dict.fromkeys(ref["index"] for ref in image_references))
+                    unique_indices = unique_indices[:5]
+                    
+                    yield {
+                        "type": "images_found",
+                        "data": {
+                            "message": f"AI referenced {len(unique_indices)} image(s)",
+                            "count": len(unique_indices)
+                        }
+                    }
+                    
+                    for img_idx in unique_indices:
+                        if img_idx in image_index:
+                            img_data = image_index[img_idx]
+                            img_path = img_data['path']
+                            
+                            if img_path in self.shown_images:
+                                continue
+                                
+                            self.shown_images.add(img_path)
+                            sent_filenames.append(img_data['filename'])
+                            
+                            ext = Path(img_path).suffix.lower()
+                            mime_type = 'image/png' if ext == '.png' else 'image/jpeg'
+                            data_uri = f"data:{mime_type};base64,{img_data['base64']}"
+                            
+                            yield {
+                                "type": "image",
+                                "data": {
+                                    "filename": img_data['filename'],
+                                    "data": data_uri,
+                                    "path": img_path,
+                                    "index": img_idx,
+                                    "description": img_data['description']
+                                }
+                            }
+                            images_sent += 1
+
+                await self._save_message(
+                    "assistant",
+                    answer_text,
+                    metadata={
+                        "image_references": image_references,
+                        "image_filenames": sent_filenames,
+                    },
+                )
+                
+                yield {
+                    "type": "complete",
+                    "data": {
+                        "message": "Response complete",
+                        "images_shown": images_sent,
+                        "context_chunks": len(context_chunks)
+                    }
                 }
-                for ref in (response.image_references or [])
-            ]
-            await self._save_message(
-                "assistant",
-                answer_text,
-                metadata={
-                    "image_references": image_refs_payload,
-                    "image_filenames": sent_filenames,
-                },
-            )
-            
-            # Step 7: Completion
-            yield {
-                "type": "complete",
-                "data": {
-                    "message": "Response complete",
-                    "images_shown": images_sent,
-                    "context_chunks": len(context_chunks)
-                }
-            }
+            else:
+                yield {"type": "error", "data": {"message": "Failed to parse structured model response."}}
             
         except Exception as e:
-            logger.error(f"Error in chat stream: {e}")
+
             yield {
                 "type": "error",
                 "data": {

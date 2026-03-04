@@ -207,7 +207,7 @@ export const ChatInterface = ({ documentId, projectId, onConversationCreated }: 
           addStep({
             id: 'web-complete-' + Date.now(),
             type: 'searching',
-            label: `Web search complete (${data.results_count ?? 0} results)`, 
+            label: `Web search complete (${data.results_count ?? 0} results)`,
             status: 'complete',
           });
           break;
