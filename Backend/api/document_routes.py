@@ -9,7 +9,7 @@ from datetime import datetime
 from typing import AsyncGenerator, Dict
 from pathlib import Path
 from fastapi import APIRouter, UploadFile, File, HTTPException, BackgroundTasks, Query, Depends
-from fastapi.responses import FileResponse, StreamingResponse, JSONResponse
+from fastapi.responses import FileResponse, StreamingResponse, JSONResponse, Response
 from config.settings import settings
 from core.document_parser import DocumentParser
 from core.content_processor import ContentProcessor
@@ -479,29 +479,51 @@ async def view_processed_chunks(
 
 @router.get("/projects/{project_id}/images/{image_filename}")
 async def get_project_image(project_id: str, image_filename: str, user = Depends(get_current_user)):
-    """Get a specific image from a project"""
+    """
+    Get a specific image from a project.
+
+    NOTE: Images are stored in the Supabase `chunk_images` bucket under:
+      {project_id}/images/{image_filename}
+    """
     try:
+        from io import BytesIO
         from pathlib import Path
-        
-        image_dir = settings.get_project_image_dir(project_id)
-        image_path = os.path.join(image_dir, image_filename)
-        
-        if not os.path.exists(image_path):
+
+        # Validate extension
+        allowed_extensions = ['.png', '.jpg', '.jpeg', '.gif', '.bmp']
+        if Path(image_filename).suffix.lower() not in allowed_extensions:
+            raise HTTPException(status_code=400, detail="Invalid file type")
+
+        storage_mgr = StorageManager()
+        storage_path = f"{project_id}/images/{image_filename}"
+
+        try:
+            img_bytes = storage_mgr.download_file(storage_path, settings.SUPABASE_BUCKET_NAME)
+        except Exception:
             raise HTTPException(
                 status_code=404,
-                detail=f"Image '{image_filename}' not found in project '{project_id}'"
+                detail=f"Image '{image_filename}' not found for project '{project_id}'"
             )
-        
-        allowed_extensions = ['.png', '.jpg', '.jpeg', '.gif', '.bmp']
-        if Path(image_path).suffix.lower() not in allowed_extensions:
-            raise HTTPException(status_code=400, detail="Invalid file type")
-        
-        return FileResponse(
-            path=image_path,
-            media_type="image/png" if image_path.endswith('.png') else "image/jpeg",
-            filename=image_filename
+
+        # Infer MIME type from extension
+        ext = Path(image_filename).suffix.lower()
+        if ext == '.png':
+            media_type = "image/png"
+        elif ext in ['.jpg', '.jpeg']:
+            media_type = "image/jpeg"
+        elif ext == '.gif':
+            media_type = "image/gif"
+        elif ext == '.bmp':
+            media_type = "image/bmp"
+        else:
+            media_type = "application/octet-stream"
+
+        return Response(
+            content=img_bytes,
+            media_type=media_type,
+            headers={"Content-Disposition": f'inline; filename="{image_filename}"'}
         )
-    
+
     except HTTPException:
         raise
     except Exception as e:

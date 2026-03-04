@@ -3,7 +3,7 @@ import { cn } from '@/lib/utils';
 
 export interface StreamingStep {
   id: string;
-  type: 'searching' | 'reading' | 'writing' | 'images';
+  type: 'planning' | 'searching' | 'reading' | 'writing' | 'images' | 'web';
   label: string;
   status: 'pending' | 'active' | 'complete';
   details?: string[];
@@ -33,6 +33,8 @@ export const StreamingSteps = ({ steps }: StreamingStepsProps) => {
     }
 
     switch (type) {
+      case 'planning':
+        return <Search className={iconClass} />;
       case 'searching':
         return <Search className={iconClass} />;
       case 'reading':

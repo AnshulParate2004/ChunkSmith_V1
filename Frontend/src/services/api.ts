@@ -1,5 +1,4 @@
-/** Base URL for API (and SSE). Use http://localhost:8000/api for local backend. */
-export const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? 'https://chunksmith.onrender.com/api';
+export const API_BASE_URL = 'http://localhost:8000/api';
 
 export interface ProcessSettings {
   languages: string;

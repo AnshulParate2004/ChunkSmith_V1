@@ -310,16 +310,15 @@ async def stream_conversation_message(
                 return
 
             project_id = conv_result["project_id"]
-            
-            # Initialize Agent for this project if needed
-            if project_id not in chat_agents:
-                chat_agents[project_id] = ChatAgent(
-                    project_id=project_id,
-                    conversation_id=conversation_id,
-                    user_id=user.id,
-                )
-            
-            agent = chat_agents[project_id]
+
+            # Initialize a fresh ChatAgent for this specific conversation.
+            # We do not reuse the global chat_agents cache here to avoid
+            # mismatches between conversation_id and the messages table FK.
+            agent = ChatAgent(
+                project_id=project_id,
+                conversation_id=conversation_id,
+                user_id=user.id,
+            )
             
             # Initial connected event (flattened for frontend)
             yield f"data: {json.dumps({'type': 'connected', 'message': 'Connected'})}\n\n"

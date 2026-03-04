@@ -50,6 +50,11 @@ const ChatPage = () => {
   const [isStreaming, setIsStreaming] = useState(false);
   const [streamingSteps, setStreamingSteps] = useState<StreamingStep[]>([]);
 
+  // When we create a brand-new conversation and immediately stream,
+  // we don't want the initial auto history load to overwrite the
+  // in-flight streaming messages (which already contain images).
+  const [skipNextHistoryLoad, setSkipNextHistoryLoad] = useState(false);
+
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const eventSourceRef = useRef<EventSource | null>(null);
   const streamingMessageIdRef = useRef<string>('');
@@ -76,11 +81,15 @@ const ChatPage = () => {
   // Fetch messages when active conversation changes
   useEffect(() => {
     if (activeConversationId && session?.access_token) {
+      if (skipNextHistoryLoad) {
+        // Skip the very first history load after creating a new conversation.
+        // The live streaming state already has the correct text + images.
+        setSkipNextHistoryLoad(false);
+        return;
+      }
       loadMessages(activeConversationId);
-    } else {
-      setMessages([]);
     }
-  }, [activeConversationId, session?.access_token]);
+  }, [activeConversationId, session?.access_token, skipNextHistoryLoad]);
 
   // Clean up event source
   useEffect(() => {
@@ -158,7 +167,11 @@ const ChatPage = () => {
           images,
         };
       });
-      setMessages(mappedMessages);
+      // If there is no stored history yet (e.g. brand new conversation),
+      // avoid overwriting any in-flight streaming messages with an empty list.
+      if (mappedMessages.length > 0) {
+        setMessages(mappedMessages);
+      }
     } catch (error) {
       toast.error('Failed to load messages');
     }
@@ -210,6 +223,10 @@ const ChatPage = () => {
         targetConversationId = response.conversation.id;
         setConversations([response.conversation, ...conversations]);
         setActiveConversationId(targetConversationId);
+        // We just created a fresh conversation and will immediately stream into it.
+        // Skip the first automatic history load so it doesn't race with streaming
+        // and overwrite images/text that are already in local state.
+        setSkipNextHistoryLoad(true);
       } catch (error) {
         toast.error('Failed to start conversation');
         return;
@@ -247,7 +264,9 @@ const ChatPage = () => {
 
     const eventSource = new EventSource(url);
     eventSourceRef.current = eventSource;
+    const conversationIdForStream = targetConversationId;
 
+    let planStepId = '';
     let searchStepId = '';
     let readStepId = '';
     let writeStepId = '';
@@ -259,6 +278,25 @@ const ChatPage = () => {
       switch (data.type) {
         case 'connected':
           break;
+
+        case 'planner_plan': {
+          planStepId = 'plan-' + Date.now();
+          const useRag = data.use_rag;
+          const useWeb = data.use_web;
+          const ragQuery = data.rag_query || message;
+          const webQuery = data.web_query || message;
+          addStep({
+            id: planStepId,
+            type: 'planning',
+            label: 'Planning tools to use',
+            status: 'complete',
+            details: [
+              `RAG: ${useRag ? 'ON' : 'OFF'} · ${ragQuery}`,
+              `WEB: ${useWeb ? 'ON' : 'OFF'} · ${webQuery}`,
+            ],
+          });
+          break;
+        }
 
         case 'search_start':
           searchStepId = 'search-' + Date.now();
@@ -288,6 +326,28 @@ const ChatPage = () => {
             details: data.sources || []
           });
           break;
+
+        case 'web_search_start': {
+          const webStepId = 'web-' + Date.now();
+          addStep({
+            id: webStepId,
+            type: 'searching',
+            label: 'Running web search',
+            status: 'active',
+            details: [data.message || 'Searching the web for more information'],
+          });
+          break;
+        }
+
+        case 'web_search_complete': {
+          addStep({
+            id: 'web-complete-' + Date.now(),
+            type: 'searching',
+            label: `Web search complete (${data.results_count ?? 0} results)`,
+            status: 'complete',
+          });
+          break;
+        }
 
         case 'images_found':
           if (readStepId) {
@@ -374,6 +434,13 @@ const ChatPage = () => {
           setTimeout(() => {
             setStreamingSteps([]);
           }, 1000);
+          // After stream ends, reload history once so that
+          // we are guaranteed to show the saved assistant
+          // message and its images, even if streaming UI
+          // was interrupted or out-of-sync.
+          if (conversationIdForStream && session?.access_token) {
+            loadMessages(conversationIdForStream);
+          }
           eventSource.close();
           break;
 

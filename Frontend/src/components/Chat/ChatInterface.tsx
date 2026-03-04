@@ -130,6 +130,7 @@ export const ChatInterface = ({ documentId, projectId, onConversationCreated }: 
     );
     eventSourceRef.current = eventSource;
 
+    let planStepId = '';
     let searchStepId = '';
     let readStepId = '';
     let writeStepId = '';
@@ -141,6 +142,25 @@ export const ChatInterface = ({ documentId, projectId, onConversationCreated }: 
       switch (data.type) {
         case 'connected':
           break;
+
+        case 'planner_plan': {
+          planStepId = 'plan-' + Date.now();
+          const useRag = data.use_rag;
+          const useWeb = data.use_web;
+          const ragQuery = data.rag_query || message;
+          const webQuery = data.web_query || message;
+          addStep({
+            id: planStepId,
+            type: 'planning',
+            label: 'Planning tools to use',
+            status: 'complete',
+            details: [
+              `RAG: ${useRag ? 'ON' : 'OFF'} · ${ragQuery}`,
+              `WEB: ${useWeb ? 'ON' : 'OFF'} · ${webQuery}`,
+            ],
+          });
+          break;
+        }
 
         case 'search_start':
           searchStepId = 'search-' + Date.now();
@@ -170,6 +190,28 @@ export const ChatInterface = ({ documentId, projectId, onConversationCreated }: 
             details: data.sources || []
           });
           break;
+
+        case 'web_search_start': {
+          const webStepId = 'web-' + Date.now();
+          addStep({
+            id: webStepId,
+            type: 'searching',
+            label: 'Running web search',
+            status: 'active',
+            details: [data.message || 'Searching the web for more information'],
+          });
+          break;
+        }
+
+        case 'web_search_complete': {
+          addStep({
+            id: 'web-complete-' + Date.now(),
+            type: 'searching',
+            label: `Web search complete (${data.results_count ?? 0} results)`, 
+            status: 'complete',
+          });
+          break;
+        }
 
         case 'images_found':
           if (readStepId) {

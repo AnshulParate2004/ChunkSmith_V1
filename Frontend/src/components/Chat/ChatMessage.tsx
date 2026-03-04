@@ -18,6 +18,49 @@ interface ChatMessageProps {
   isStreaming?: boolean;
 }
 
+interface ChatImageThumbProps {
+  image: ChatImage;
+  onClick: () => void;
+}
+
+const ChatImageThumb = ({ image, onClick }: ChatImageThumbProps) => {
+  const [src, setSrc] = useState<string | undefined>(image.data ?? image.url);
+  const [retryCount, setRetryCount] = useState(0);
+
+  const handleError = () => {
+    // Only retry for URL-based images (history), not inline base64
+    if (!image.data && image.url && retryCount < 2) {
+      try {
+        const urlObj = new URL(image.url);
+        urlObj.searchParams.set('r', Date.now().toString());
+        setSrc(urlObj.toString());
+        setRetryCount((prev) => prev + 1);
+      } catch {
+        // If URL parsing fails, don't loop retries
+      }
+    }
+  };
+
+  if (!src) {
+    return null;
+  }
+
+  return (
+    <div
+      className="cursor-pointer group relative overflow-hidden rounded-lg border border-border hover:border-primary transition-colors"
+      onClick={onClick}
+    >
+      <img
+        src={src}
+        alt={image.filename}
+        className="w-full h-32 object-contain bg-black group-hover:scale-105 transition-transform"
+        onError={handleError}
+      />
+      <div className="absolute inset-0 bg-black/0 group-hover:bg-black/10 transition-colors" />
+    </div>
+  );
+};
+
 export const ChatMessage = ({ type, content, images, isStreaming }: ChatMessageProps) => {
   const [selectedImage, setSelectedImage] = useState<ChatImage | null>(null);
 
@@ -59,18 +102,11 @@ export const ChatMessage = ({ type, content, images, isStreaming }: ChatMessageP
                   </p>
                   <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
                     {images.map((img, idx) => (
-                      <div
+                      <ChatImageThumb
                         key={idx}
-                        className="cursor-pointer group relative overflow-hidden rounded-lg border border-border hover:border-primary transition-colors"
+                        image={img}
                         onClick={() => setSelectedImage(img)}
-                      >
-                        <img
-                          src={img.data}
-                          alt={img.filename}
-                          className="w-full h-32 object-cover group-hover:scale-105 transition-transform"
-                        />
-                        <div className="absolute inset-0 bg-black/0 group-hover:bg-black/10 transition-colors" />
-                      </div>
+                      />
                     ))}
                   </div>
                 </div>

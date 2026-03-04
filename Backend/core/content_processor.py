@@ -9,6 +9,7 @@ from langchain_core.documents import Document
 from langchain_openai import AzureChatOpenAI
 from langchain_core.messages import HumanMessage
 from pydantic import BaseModel, Field
+from supabase import create_client
 from utils.storage import StorageManager
 from config.settings import settings
 from dotenv import load_dotenv
@@ -300,28 +301,37 @@ TEXT CONTENT:
         
         # No longer cleaning - project-based structure keeps data isolated
         
-        # Find highest existing image number in the directory
-        existing_images = list(Path(self.image_dir).glob("image_*.png"))
-        if existing_images:
-            # Extract numbers from filenames like "image_0001.png"
-            existing_numbers = []
-            for img in existing_images:
-                try:
-                    # Extract number from filename: image_0001.png -> 0001 -> 1
-                    num_str = img.stem.split('_')[1]  # Get "0001" part
-                    existing_numbers.append(int(num_str))
-                except (IndexError, ValueError):
-                    pass
-            
-            if existing_numbers:
-                start_count = max(existing_numbers) + 1
-                # print(f"Found {len(existing_images)} existing images, starting from image_{start_count:04d}.png")
-            else:
-                start_count = 1
-        else:
-            start_count = 1
+        # Find highest existing image number via Supabase (documents table)
+        max_index = 0
         
-        total_chunks = len(chunks)
+        # Check Supabase documents table for this project's total image count (robust across restarts)
+        if self.project_id:
+            try:
+                if settings.SUPABASE_URL and settings.SUPABASE_KEY:
+                    supabase = create_client(settings.SUPABASE_URL, settings.SUPABASE_KEY)
+                    # Sum image_count for all documents in this project.
+                    # This assumes we number images sequentially across all documents
+                    # and keep documents.image_count in sync.
+                    resp = (
+                        supabase.table("documents")
+                        .select("image_count")
+                        .eq("project_id", self.project_id)
+                        .execute()
+                    )
+                    rows = resp.data or []
+                    total_images = 0
+                    for row in rows:
+                        try:
+                            total_images += int(row.get("image_count") or 0)
+                        except (TypeError, ValueError):
+                            continue
+                    if total_images > 0:
+                        max_index = max(max_index, total_images)
+            except Exception as e:
+                print(f"Warning: failed to inspect Supabase documents for project {self.project_id}: {e}")
+
+        start_count = max_index + 1 if max_index > 0 else 1
+
         image_counter = {'count': start_count}
         
         # Step 1: Extract content from all chunks (synchronous)

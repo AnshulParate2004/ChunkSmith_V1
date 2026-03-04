@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 
-const WS_BASE_URL = 'ws://chunksmith.onrender.com/api/ws';
+const WS_BASE_URL = 'ws://localhost:8000/api/ws';
 
 export interface WebSocketMessage {
   type: 'connected' | 'step' | 'chunk_progress' | 'complete' | 'error' | 'log';

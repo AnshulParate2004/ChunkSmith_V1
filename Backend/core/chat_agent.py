@@ -12,6 +12,8 @@ from utils.vector_store import VectorStoreManager
 from config.settings import settings
 from dotenv import load_dotenv
 from pydantic import BaseModel, Field
+from tavily import TavilyClient
+
 
 load_dotenv()
 
@@ -36,6 +38,26 @@ class ChatResponse(BaseModel):
     image_references: List[ImageReference] = Field(
         default=[],
         description="List of image indices to show. Use index from the available images list. Only include if images would help answer the question."
+    )
+
+
+class ToolPlan(BaseModel):
+    """Planner output deciding which tools to use and with what queries."""
+    use_rag: bool = Field(
+        default=True,
+        description="Whether to use the project RAG retrieval tool for this question.",
+    )
+    rag_query: Optional[str] = Field(
+        default=None,
+        description="Refined query to use for the RAG tool. If null, use the user's question.",
+    )
+    use_web: bool = Field(
+        default=False,
+        description="Whether to use the Tavily web search tool for this question.",
+    )
+    web_query: Optional[str] = Field(
+        default=None,
+        description="Refined query to use for the web search tool. If null, use the user's question.",
     )
 
 
@@ -83,6 +105,15 @@ class ChatAgent:
             temperature=0.2,
         ).with_structured_output(ChatResponse)
 
+        # Planner LLM that decides which tools (RAG, web) to use and how
+        self.planner_llm = AzureChatOpenAI(
+            azure_endpoint=self.azure_endpoint,
+            api_key=self.azure_api_key,
+            azure_deployment=settings.AZURE_OPENAI_CHAT_MODEL,
+            api_version=self.azure_api_version,
+            temperature=0.0,
+        ).with_structured_output(ToolPlan)
+
         # Set paths
         self.image_dir = str(settings.get_project_image_dir(project_id))
         
@@ -94,23 +125,35 @@ class ChatAgent:
             )
             print(f"✅ Vector store loaded successfully for project: {project_id}")
         except Exception as e:
-            print(f"❌ Error loading vector store for project {project_id}: {e}")
-            raise Exception(f"Failed to initialize chat: Vector store not available for project '{project_id}'. Make sure documents have been processed first.") from e
+            print(f"Error loading vector store for project {project_id}: {e}")
+            raise Exception(
+                f"Failed to initialize chat: Vector store not available for project '{project_id}'. "
+                f"Make sure documents have been processed first."
+            ) from e
         
-        # Optimized system prompt
-        self.system_prompt = """You are a helpful AI assistant that answers questions based on document content.
+        # Optimized system prompt for dual-tool (RAG + web search) agent
+        self.system_prompt = """You are an AI research assistant with two main tools:
+
+1) PROJECT RAG TOOL
+   - Uses the provided project context (text, image descriptions, table descriptions) to answer questions.
+   - This is your PRIMARY source whenever the question is about the project documents.
+
+2) WEB SEARCH TOOL (Tavily)
+   - Used only when the project context does NOT contain enough information (for example, general knowledge, up-to-date facts, or clearly external questions).
+   - When web search is used, combine it carefully with any relevant project context and clearly explain the answer.
 
 INSTRUCTIONS:
-1. Use the provided context (text, image descriptions, table descriptions) to answer questions.
-2. Always check the AVAILABLE IMAGES section and, whenever they would genuinely help the user understand the answer, INCLUDE image_references.
-3. Return your response in structured format with:
+1. FIRST, try to answer using the project RAG context.
+2. If the project context is clearly insufficient, mentally call the WEB SEARCH TOOL and use those results.
+3. Always check the AVAILABLE IMAGES section and, whenever they would genuinely help the user understand the answer, INCLUDE image_references.
+4. Return your response in structured format with:
    - answer: Your complete answer to the question.
    - image_references: List of image indices to show (see rules below).
-4. Only reference images that directly support your answer and are factually consistent with the text.
-5. When tables contain relevant data, describe the key information from the table descriptions provided.
-6. If the answer isn't in the context, say so honestly.
-7. Be concise but thorough.
-8. Reference page numbers when available.
+5. Only reference images that directly support your answer and are factually consistent with the text.
+6. When tables contain relevant data, describe the key information from the table descriptions provided.
+7. If the answer isn't in the context or web search, say so honestly.
+8. Be concise but thorough.
+9. Reference page numbers when available.
 
 IMPORTANT:
 - Use image INDEX numbers from the "Available Images" list (0-based indexing).
@@ -125,7 +168,7 @@ CONTEXT:
 CONVERSATION HISTORY:
 {chat_history}
 
-Answer the user's question based on the context and conversation history."""
+Answer the user's question based on the tools and context above."""
 
 
     def _get_history(self) -> List[HumanMessage | AIMessage]:
@@ -301,6 +344,26 @@ Answer the user's question based on the context and conversation history."""
         
         return "\n".join(formatted)
     
+    def web_search(self, query: str, max_results: int = 5) -> List[Dict]:
+        """
+        Run a web search using Tavily when available.
+        Returns a list of result dicts with title/content/url when possible.
+        """
+        api_key = os.getenv("TAVILY_API_KEY")
+        if not api_key or TavilyClient is None:
+            return []
+
+        try:
+            client = TavilyClient(api_key=api_key)
+            resp = client.search(query=query, max_results=max_results)
+            # Tavily returns a dict with "results" key
+            if isinstance(resp, dict):
+                return resp.get("results", []) or []
+            return resp or []
+        except Exception as e:
+            print(f"Web search error: {e}")
+            return []
+
     async def chat_stream(
         self,
         user_message: str,
@@ -317,33 +380,93 @@ Answer the user's question based on the context and conversation history."""
             # Step 0: Save User Message (await to ensure consistency)
             await self._save_message("user", user_message)
 
-            # Step 1: Search for relevant context
-            yield {
-                "type": "search_start",
-                "data": {"message": "Searching document for relevant information..."}
-            }
-            
-            context_chunks = self.search_relevant_context(user_message, k=3)
-            image_index = self.build_image_index(context_chunks)
-            
-            yield {
-                "type": "search_complete",
-                "data": {
-                    "message": f"Found {len(context_chunks)} relevant sections with {len(image_index)} images",
-                    "chunks_count": len(context_chunks),
-                    "images_available": len(image_index)
-                }
-            }
-            
-            # Step 2: Format context and history
-            context_text = self.format_context(context_chunks, image_index)
-
             # Fetch history either from external source or Supabase
             if external_history is not None:
                 history_msgs = external_history
             else:
                 history_msgs = self._get_history()
             chat_history_text = self.format_chat_history(history_msgs)
+            
+            # Step 1: Ask planner LLM which tools to use and with what queries
+            planner_prompt = (
+                "You are a planning agent that decides which tools to use to answer a user question.\n"
+                "Tools:\n"
+                "1) RAG: Retrieve information from the project documents vector store.\n"
+                "2) WEB: Use Tavily web search for up-to-date or external information.\n\n"
+                "You must decide:\n"
+                "- Whether to use RAG.\n"
+                "- Whether to use WEB.\n"
+                "- Optional refined queries for each tool.\n\n"
+                "Be conservative with WEB: only use it when project documents are clearly insufficient.\n\n"
+                f"User question:\n{user_message}\n\n"
+                f"Recent conversation history:\n{chat_history_text}\n"
+            )
+
+            planner_messages = [SystemMessage(content="You output only a JSON plan."), HumanMessage(content=planner_prompt)]
+            plan: ToolPlan = await self.planner_llm.ainvoke(planner_messages)
+
+            yield {
+                "type": "planner_plan",
+                "data": {
+                    "use_rag": plan.use_rag,
+                    "use_web": plan.use_web,
+                    "rag_query": plan.rag_query or user_message,
+                    "web_query": plan.web_query or user_message,
+                },
+            }
+
+            # Step 2: Run tools according to plan
+            context_chunks: List[Dict] = []
+            image_index: Dict[int, Dict] = {}
+
+            if plan.use_rag:
+                rag_query = (plan.rag_query or user_message).strip()
+                yield {
+                    "type": "search_start",
+                    "data": {"message": f"Searching project documents for: {rag_query}"},
+                }
+
+                context_chunks = self.search_relevant_context(rag_query, k=3)
+                image_index = self.build_image_index(context_chunks)
+
+                yield {
+                    "type": "search_complete",
+                    "data": {
+                        "message": f"Found {len(context_chunks)} relevant sections with {len(image_index)} images",
+                        "chunks_count": len(context_chunks),
+                        "images_available": len(image_index),
+                    },
+                }
+
+            web_results: List[Dict] = []
+            if plan.use_web:
+                web_query = (plan.web_query or user_message).strip()
+                yield {
+                    "type": "web_search_start",
+                    "data": {"message": f"Running Tavily web search for: {web_query}"},
+                }
+                web_results = self.web_search(web_query, max_results=5)
+                yield {
+                    "type": "web_search_complete",
+                    "data": {
+                        "message": f"Web search returned {len(web_results)} result(s)",
+                        "results_count": len(web_results),
+                    },
+                }
+
+            # Step 3: Format context (RAG + optional web results)
+            context_text = self.format_context(context_chunks, image_index)
+
+            if web_results:
+                web_lines: List[str] = ["", "=== WEB SEARCH RESULTS ==="]
+                for i, item in enumerate(web_results, 1):
+                    title = item.get("title") or f"Result {i}"
+                    snippet = item.get("content") or item.get("snippet") or ""
+                    url = item.get("url") or ""
+                    web_lines.append(f"- {title}: {snippet[:200]}{'...' if len(snippet) > 200 else ''}")
+                    if url:
+                        web_lines.append(f"  URL: {url}")
+                context_text = context_text + "\n" + "\n".join(web_lines)
             
             prompt = self.system_prompt.format(
                 context=context_text,
@@ -355,7 +478,7 @@ Answer the user's question based on the context and conversation history."""
                 HumanMessage(content=user_message)
             ]
             
-            # Step 3: Get AI response
+            # Step 4: Get AI response
             yield {
                 "type": "response_start",
                 "data": {"message": "Generating response..."}
