@@ -8,7 +8,10 @@ import zipfile
 from datetime import datetime
 from typing import AsyncGenerator, Dict
 from pathlib import Path
+import logging
 from fastapi import APIRouter, UploadFile, File, HTTPException, BackgroundTasks, Query, Depends
+
+logger = logging.getLogger(__name__)
 from fastapi.responses import FileResponse, StreamingResponse, JSONResponse, Response
 from config.settings import settings
 from core.document_parser import DocumentParser
@@ -83,7 +86,7 @@ async def download_document(
                  extract_from_chunk(data)
                  
         except Exception as e:
-            print(f"Error parsing JSON for images: {e}")
+            logger.error(f"Error parsing JSON for images: {e}")
             image_filenames = set()
 
         # 3. Create ZIP with structure
@@ -102,7 +105,7 @@ async def download_document(
                         img_bytes = storage_mgr.download_file(img_path, settings.SUPABASE_BUCKET_NAME) # images bucket
                         zipf.writestr(f"images/{img_name}", img_bytes)
                     except Exception as e:
-                        print(f"Could not download image {img_name}: {e}")
+                        logger.error(f"Could not download image {img_name}: {e}")
                         # Continue without this image
             
         return FileResponse(
@@ -174,9 +177,9 @@ async def initiate_pdf_processing(
                 "application/pdf",
                 bucket_name=settings.SUPABASE_PDF_BUCKET_NAME
             )
-            print(f"Uploaded PDF to Supabase: {document_id}.pdf")
+            logger.info(f"Uploaded PDF to Supabase: {document_id}.pdf")
         except Exception as e:
-            print(f"Error uploading PDF to Supabase: {e}")
+            logger.warning(f"Error uploading PDF to Supabase: {e}")
             # Non-critical for processing, but good to know
         
         # Initialize status
@@ -206,10 +209,10 @@ async def initiate_pdf_processing(
             )
         except ValueError as ownership_err:
             # Project exists but belongs to a different user
-            print(f"Project ownership error: {ownership_err}")
+            logger.error(f"Project ownership error: {ownership_err}")
             raise HTTPException(status_code=403, detail=str(ownership_err))
         except Exception as db_err:
-            print(f"DB upsert (queued) failed: {db_err}")
+            logger.error(f"DB upsert (queued) failed: {db_err}")
         
         # Start background processing
         background_tasks.add_task(
@@ -562,7 +565,7 @@ async def process_pdf_background(
                 **kwargs
             )
         except Exception as e:
-            print(f"DB upsert ({status}) failed: {e}")
+            logger.error(f"DB upsert ({status}) failed: {e}")
     
     try:
         _upsert_doc("processing")
@@ -642,8 +645,8 @@ async def process_pdf_background(
         
         from unstructured.chunking.title import chunk_by_title
         
-        print(f"\n=== [CHUNKING START] Document: {document_id} ===")
-        print(f"Input: {len(elements)} elements to be chunked.")
+        logger.info(f"=== [CHUNKING START] Document: {document_id} ===")
+        logger.info(f"Input: {len(elements)} elements to be chunked.")
         
         chunks = chunk_by_title(
             elements=elements,
@@ -652,13 +655,7 @@ async def process_pdf_background(
             combine_text_under_n_chars=combine_text_under_n_chars
         )
         
-        print(f"Output: Generated {len(chunks)} chunks.")
-        for i, chunk in enumerate(chunks):
-             # Try to get text content safely
-             text_content = getattr(chunk, "text", str(chunk))
-             preview = text_content[:60].replace('\n', ' ')
-             print(f"  > Chunk {i+1}: Length={len(text_content)} | Content: {preview}...")
-        print(f"=== [CHUNKING END] ===\n")
+        logger.info(f"Output: Generated {len(chunks)} chunks.")
         
         checkpoint2_path = os.path.join(pickle_dir, f"{document_id}_checkpoint2.pkl")
         FileHandler.save_pickle(chunks, checkpoint2_path)

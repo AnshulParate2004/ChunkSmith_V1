@@ -61,7 +61,7 @@ const ProjectPage = () => {
   });
 
   useEffect(() => {
-    console.log('🔧 Settings updated:', settings);
+    // Settings updated
   }, [settings]);
 
   useEffect(() => {
@@ -195,10 +195,6 @@ const ProjectPage = () => {
       return;
     }
 
-    console.log('📤 Upload initiated with settings:', settings);
-    console.log('📝 Language being sent to backend:', settings.languages);
-    console.log('📄 File:', selectedFile.name);
-
     setIsUploading(true);
     try {
       const result = await apiService.uploadPDF(selectedFile, settings, projectId!);
@@ -211,7 +207,6 @@ const ProjectPage = () => {
       setSelectedFile(null);
       navigate(`/processing/${result.document_id}?projectId=${projectId}`);
     } catch (error) {
-      console.error('❌ Upload error:', error);
       toast({
         title: "Upload failed",
         description: error instanceof Error ? error.message : "Unknown error occurred",
@@ -540,7 +535,6 @@ const ProjectPage = () => {
                       <UploadSettings
                         settings={settings}
                         onSettingsChange={(newSettings) => {
-                          console.log('⚙️ UploadSettings callback - New settings:', newSettings);
                           setSettings(newSettings);
                         }}
                       />

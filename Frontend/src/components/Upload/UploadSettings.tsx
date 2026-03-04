@@ -106,7 +106,6 @@ interface UploadSettingsProps {
 
 export const UploadSettings = ({ settings, onSettingsChange }: UploadSettingsProps) => {
   const updateSetting = (key: keyof ProcessSettings, value: any) => {
-    console.log(`🔧 Setting ${key} to:`, value); // Debug log
     onSettingsChange({ ...settings, [key]: value });
   };
 
@@ -120,7 +119,6 @@ export const UploadSettings = ({ settings, onSettingsChange }: UploadSettingsPro
           <Select
             value={settings.languages}
             onValueChange={(value) => {
-              console.log('🌐 Language changed to:', value);
               updateSetting('languages', value);
             }}
           >

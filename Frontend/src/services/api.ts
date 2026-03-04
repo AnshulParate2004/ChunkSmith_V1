@@ -166,11 +166,6 @@ class ApiService {
 
   // UPDATED: Now requires project_id
   async uploadPDF(file: File, settings: ProcessSettings, projectId: string) {
-    console.log('=== Upload Debug ===');
-    console.log('Project ID:', projectId);
-    console.log('Selected language code:', settings.languages);
-    console.log('Full settings:', settings);
-
     const queryParams = new URLSearchParams({
       project_id: projectId,
       max_characters: String(settings.maxCharacters),
@@ -181,13 +176,10 @@ class ApiService {
       languages: settings.languages || 'english',
     });
 
-    console.log('🔗 Query params:', queryParams.toString());
-
     const formData = new FormData();
     formData.append('file', file);
 
     const url = `${API_BASE_URL}/process-pdf?${queryParams.toString()}`;
-    console.log('📤 POST URL:', url);
 
     // Get auth headers (excluding Content-Type for FormData)
     const session = localStorage.getItem('session');
@@ -214,7 +206,6 @@ class ApiService {
     }
 
     const result = await response.json();
-    console.log('✅ Upload response:', result);
     return result;
   }
 

@@ -104,7 +104,7 @@ const ProcessingPage = () => {
           localStorage.setItem(`processing_${documentId}`, JSON.stringify(dataToSave));
         }
       } catch (e) {
-        console.log("Document not ready or fetch failed, waiting for SSE");
+        // Document not ready or fetch failed, waiting for SSE
       }
     };
 

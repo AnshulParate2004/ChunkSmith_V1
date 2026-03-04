@@ -4,7 +4,10 @@ import shutil
 import tempfile
 import zipfile
 import os
+import logging
 from fastapi import APIRouter, HTTPException, Query, Depends
+
+logger = logging.getLogger(__name__)
 from fastapi.responses import FileResponse
 from config.settings import settings
 from utils.storage import StorageManager
@@ -39,7 +42,7 @@ async def create_project(request: ProjectCreateRequest, user = Depends(get_curre
             ]:
                 storage_mgr.upload_bytes(b"", f"{project_id}/.keep", "text/plain", bucket)
         except Exception as e:
-            print(f"Warning: Bucket placeholder failed for {project_id}: {e}")
+            logger.warning(f"Bucket placeholder failed for {project_id}: {e}")
 
         return {
             "success": True,
@@ -104,7 +107,7 @@ async def get_project_details(project_id: str, user = Depends(get_current_user))
             doc_count = vector_manager.get_project_document_count(project_id)
             has_vector_store = doc_count > 0
         except Exception as ve:
-            print(f"Vector count error for project {project_id}: {ve}")
+            logger.error(f"Vector count error for project {project_id}: {ve}")
         
         return {
             "success": True,
@@ -118,8 +121,7 @@ async def get_project_details(project_id: str, user = Depends(get_current_user))
         }
     
     except Exception as e:
-        import traceback
-        traceback.print_exc() # Print full stack trace to logs
+        logger.exception("Error getting project details")
         raise HTTPException(status_code=500, detail=str(e))
 
 
@@ -148,7 +150,7 @@ async def delete_project(project_id: str, user = Depends(get_current_user)):
         try:
             repo.soft_delete_project(project_id)
         except Exception as db_err:
-            print(f"DB soft delete error (tables may not exist yet): {db_err}")
+            logger.error(f"DB soft delete error (tables may not exist yet): {db_err}")
             raise HTTPException(
                 status_code=500,
                 detail=f"Could not delete project: {str(db_err)}. Ensure projects/documents tables exist."

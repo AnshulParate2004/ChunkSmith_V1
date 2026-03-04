@@ -9,9 +9,11 @@ from dotenv import load_dotenv
 import platform
 import os
 import asyncio
+import logging
 
 # Configure logging (suppress verbose retry logs)
 configure_logging()
+logger = logging.getLogger(__name__)
 
 
 
@@ -62,9 +64,9 @@ app.include_router(router, prefix="/api", tags=["documents"])
 @app.middleware("http")
 async def log_requests(request: Request, call_next):
     """Log all incoming HTTP requests and their responses."""
-    print(f"[REQUEST] {request.method} {request.url.path}", flush=True)
+    logger.info(f"[REQUEST] {request.method} {request.url.path}")
     response = await call_next(request)
-    print(f"[RESPONSE] {request.method} {request.url.path} -> {response.status_code}", flush=True)
+    logger.info(f"[RESPONSE] {request.method} {request.url.path} -> {response.status_code}")
     return response
 
 # -------------------------------

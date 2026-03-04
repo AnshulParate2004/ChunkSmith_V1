@@ -87,7 +87,7 @@ const Dashboard = () => {
             console.error('Failed to delete project:', error);
             const errorMessage = error instanceof Error ? error.message : 'Failed to delete project';
             if (errorMessage.includes('Failed to fetch')) {
-                toast.error('Cannot connect to backend server. Make sure it is running on localhost:8000');
+                toast.error('Cannot connect to backend server. Make sure it is running.');
             } else {
                 toast.error(errorMessage);
             }

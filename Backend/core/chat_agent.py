@@ -91,7 +91,7 @@ class ChatAgent:
         if not self.azure_api_key or not self.azure_endpoint:
             raise ValueError("AZURE_OPENAI_API_KEY and AZURE_OPENAI_ENDPOINT must be set in environment")
             
-        print(f"ChatAgent initialized with Azure OpenAI endpoint: {self.azure_endpoint}")
+        logger.info(f"ChatAgent initialized with Azure OpenAI endpoint: {self.azure_endpoint}")
 
         # Initialize shown images tracking
         self.shown_images = set()
@@ -123,9 +123,9 @@ class ChatAgent:
             self.vectorstore = self.vector_manager.load_vector_store(
                 collection_name=project_id
             )
-            print(f"✅ Vector store loaded successfully for project: {project_id}")
+            logger.info(f"Vector store loaded successfully for project: {project_id}")
         except Exception as e:
-            print(f"Error loading vector store for project {project_id}: {e}")
+            logger.error(f"Error loading vector store for project {project_id}: {e}")
             raise Exception(
                 f"Failed to initialize chat: Vector store not available for project '{project_id}'. "
                 f"Make sure documents have been processed first."
@@ -207,7 +207,7 @@ Answer the user's question based on the tools and context above."""
 
             return history
         except Exception as e:
-            print(f"Error fetching history: {e}")
+            logger.error(f"Error fetching history: {e}")
             return []
 
     async def _save_message(self, role: str, content: str, metadata: Optional[Dict] = None):
@@ -228,7 +228,7 @@ Answer the user's question based on the tools and context above."""
                 "metadata": metadata or {},
             }).execute()
         except Exception as e:
-            print(f"Error saving message: {e}")
+            logger.error(f"Error saving message: {e}")
 
     def search_relevant_context(self, query: str, k: int = 3) -> List[Dict]:
         """Search for relevant context in vector store"""
@@ -361,7 +361,7 @@ Answer the user's question based on the tools and context above."""
                 return resp.get("results", []) or []
             return resp or []
         except Exception as e:
-            print(f"Web search error: {e}")
+            logger.error(f"Web search error: {e}")
             return []
 
     async def chat_stream(
@@ -574,7 +574,7 @@ Answer the user's question based on the tools and context above."""
             }
             
         except Exception as e:
-            print(f"Error in chat stream: {e}")
+            logger.error(f"Error in chat stream: {e}")
             yield {
                 "type": "error",
                 "data": {

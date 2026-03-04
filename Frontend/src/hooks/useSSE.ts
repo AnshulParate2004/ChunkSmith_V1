@@ -55,7 +55,6 @@ export const useSSE = (documentId: string | null) => {
         eventSourceRef.current = eventSource;
 
         eventSource.onopen = () => {
-          console.log('SSE connected');
           setConnected(true);
           setError(null);
         };
@@ -63,7 +62,6 @@ export const useSSE = (documentId: string | null) => {
         eventSource.onmessage = (event) => {
           try {
             const data = JSON.parse(event.data);
-            console.log('SSE message:', data);
 
             const message: SSEMessage = {
               type: data.type || 'progress',
@@ -82,7 +80,7 @@ export const useSSE = (documentId: string | null) => {
 
           // Check if the connection was closed normally (completed/failed)
           if (eventSource.readyState === EventSource.CLOSED) {
-            console.log('SSE connection closed');
+            // Connection closed by server
           } else {
             setError('Connection error occurred');
             // Attempt to reconnect after a delay
