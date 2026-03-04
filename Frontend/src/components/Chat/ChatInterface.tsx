@@ -3,7 +3,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Send, Loader2, Trash2 } from 'lucide-react';
-import { apiService } from '@/services/api';
+import { apiService, API_BASE_URL } from '@/services/api';
 import { toast } from 'sonner';
 import { StreamingSteps, StreamingStep } from './StreamingSteps';
 import { ChatMessage, ChatImage } from './ChatMessage';
@@ -126,7 +126,7 @@ export const ChatInterface = ({ documentId, projectId, onConversationCreated }: 
     const encodedMessage = encodeURIComponent(message);
     const encodedToken = encodeURIComponent(token);
     const eventSource = new EventSource(
-      `https://chunksmith.onrender.com/api/chat/conversations/${targetConversationId}/message_stream?message=${encodedMessage}&token=${encodedToken}`
+      `${API_BASE_URL}/chat/conversations/${targetConversationId}/message_stream?message=${encodedMessage}&token=${encodedToken}`
     );
     eventSourceRef.current = eventSource;
 

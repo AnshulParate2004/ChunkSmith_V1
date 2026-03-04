@@ -5,7 +5,7 @@ import { Input } from '@/components/ui/input';
 import { Card } from '@/components/ui/card';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { ArrowLeft, Send, Loader2 } from 'lucide-react';
-import { apiService } from '@/services/api';
+import { apiService, API_BASE_URL } from '@/services/api';
 import { toast } from 'sonner';
 import { StreamingSteps, StreamingStep } from '@/components/Chat/StreamingSteps';
 import { ChatMessage, ChatImage } from '@/components/Chat/ChatMessage';
@@ -138,18 +138,26 @@ const ChatPage = () => {
   };
 
   const loadMessages = async (conversationId: string) => {
-    if (!session?.access_token) return;
+    if (!session?.access_token || !projectId) return;
     try {
       const response = await apiService.getConversationHistory(conversationId, session.access_token);
 
-      // Map DB messages to UI format
-      const mappedMessages: Message[] = response.messages.map((msg: any) => ({
-        id: msg.id,
-        type: msg.role,
-        content: msg.content,
-        // We might want to parse images if we store them in DB, but for now history is text
-        images: []
-      }));
+      // Map DB messages to UI format; restore images from metadata.image_filenames via image API URL
+      const mappedMessages: Message[] = (response.messages || []).map((msg: any) => {
+        const images =
+          msg.role === 'assistant' && Array.isArray(msg.metadata?.image_filenames)
+            ? msg.metadata.image_filenames.map((filename: string) => ({
+                filename,
+                url: apiService.getImageUrl(projectId!, filename),
+              }))
+            : [];
+        return {
+          id: msg.id,
+          type: msg.role,
+          content: msg.content ?? '',
+          images,
+        };
+      });
       setMessages(mappedMessages);
     } catch (error) {
       toast.error('Failed to load messages');
@@ -235,8 +243,7 @@ const ChatPage = () => {
     const encodedMessage = encodeURIComponent(message);
     const encodedToken = encodeURIComponent(session.access_token);
 
-    // Use new endpoint
-    const url = `https://chunksmith.onrender.com/api/chat/conversations/${targetConversationId}/message_stream?message=${encodedMessage}&token=${encodedToken}`;
+    const url = `${API_BASE_URL}/chat/conversations/${targetConversationId}/message_stream?message=${encodedMessage}&token=${encodedToken}`;
 
     const eventSource = new EventSource(url);
     eventSourceRef.current = eventSource;

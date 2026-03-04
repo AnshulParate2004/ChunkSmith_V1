@@ -5,7 +5,10 @@ import { Button } from '@/components/ui/button';
 
 export interface ChatImage {
   filename: string;
-  data: string;
+  /** Inline base64 data URI (streaming). */
+  data?: string;
+  /** URL for loading image (history from API). */
+  url?: string;
 }
 
 interface ChatMessageProps {
@@ -95,7 +98,7 @@ export const ChatMessage = ({ type, content, images, isStreaming }: ChatMessageP
               <X className="w-6 h-6" />
             </Button>
             <img
-              src={selectedImage.data}
+              src={selectedImage.data ?? selectedImage.url}
               alt={selectedImage.filename}
               className="max-w-full max-h-[90vh] rounded-lg"
             />

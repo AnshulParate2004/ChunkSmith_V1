@@ -15,10 +15,11 @@ from pydantic import BaseModel, Field
 
 load_dotenv()
 
-# Suppress noisy Pydantic serializer warnings for ChatResponse "parsed" field
+# Suppress noisy Pydantic serializer warnings coming from pydantic.main
+# (they do not affect correctness of ChatResponse parsing)
 warnings.filterwarnings(
     "ignore",
-    message="PydanticSerializationUnexpectedValue",
+    category=UserWarning,
     module="pydantic.main",
 )
 
@@ -301,10 +302,17 @@ Answer the user's question based on the context and conversation history."""
         return "\n".join(formatted)
     
     async def chat_stream(
-        self, 
-        user_message: str
+        self,
+        user_message: str,
+        external_history: Optional[List[HumanMessage | AIMessage]] = None,
     ) -> AsyncGenerator[Dict, None]:
-        """Stream chat responses with SSE"""
+        """
+        Stream chat responses with SSE-style events.
+
+        If `external_history` is provided, it is used as the conversation
+        history instead of loading from Supabase. This is useful for
+        ephemeral CLI chats that don't persist to the database.
+        """
         try:
             # Step 0: Save User Message (await to ensure consistency)
             await self._save_message("user", user_message)
@@ -329,9 +337,12 @@ Answer the user's question based on the context and conversation history."""
             
             # Step 2: Format context and history
             context_text = self.format_context(context_chunks, image_index)
-            
-            # Fetch fresh history from DB
-            history_msgs = self._get_history()
+
+            # Fetch history either from external source or Supabase
+            if external_history is not None:
+                history_msgs = external_history
+            else:
+                history_msgs = self._get_history()
             chat_history_text = self.format_chat_history(history_msgs)
             
             prompt = self.system_prompt.format(
@@ -364,8 +375,9 @@ Answer the user's question based on the context and conversation history."""
                 }
                 await asyncio.sleep(0.01)
             
-            # Step 5: Send images
+            # Step 5: Send images and collect filenames for persistence
             images_sent = 0
+            sent_filenames: List[str] = []
             if response.image_references:
                 # Unique image indices referenced by the model
                 unique_indices = list(dict.fromkeys(ref.index for ref in response.image_references))
@@ -391,6 +403,7 @@ Answer the user's question based on the context and conversation history."""
                             
                         # Mark as shown
                         self.shown_images.add(img_path)
+                        sent_filenames.append(img_data['filename'])
                         
                         ext = Path(img_path).suffix.lower()
                         mime_type = 'image/png' if ext == '.png' else 'image/jpeg'
@@ -410,7 +423,7 @@ Answer the user's question based on the context and conversation history."""
                     else:
                         pass
             
-            # Step 6: Save AI response including structured image_references
+            # Step 6: Save AI response including image_references and filenames for history display
             image_refs_payload = [
                 {
                     "index": ref.index,
@@ -421,7 +434,10 @@ Answer the user's question based on the context and conversation history."""
             await self._save_message(
                 "assistant",
                 answer_text,
-                metadata={"image_references": image_refs_payload},
+                metadata={
+                    "image_references": image_refs_payload,
+                    "image_filenames": sent_filenames,
+                },
             )
             
             # Step 7: Completion
