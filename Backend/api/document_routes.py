@@ -167,7 +167,7 @@ async def initiate_pdf_processing(
             storage_mgr = StorageManager()
             with open(upload_path, 'rb') as pdf_file:
                 pdf_content = pdf_file.read()
-                
+            
             storage_mgr.upload_data(
                 pdf_content, 
                 f"{project_id}/{document_id}.pdf", 
@@ -800,7 +800,6 @@ async def process_pdf_background(
         import traceback
         traceback.print_exc()
         
-        # Upsert failed in PostgreSQL
         try:
             supabase = get_supabase_client()
             repo = ProjectRepository(supabase)
@@ -813,7 +812,6 @@ async def process_pdf_background(
         except Exception as db_err:
             print(f"DB upsert (failed) error: {db_err}")
         
-        # Try to cleanup
         try:
             if 'upload_path' in locals() and os.path.exists(upload_path):
                 os.remove(upload_path)

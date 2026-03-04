@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 
-const API_BASE_URL = 'http://localhost:8000/api';
+const API_BASE_URL = 'https://chunksmith.onrender.com/api';
 
 export interface SSEMessage {
   type: 'connected' | 'progress' | 'complete' | 'error';

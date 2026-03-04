@@ -39,7 +39,7 @@ def get_health_endpoint() -> str:
         base = external.rstrip("/")
         endpoint = f"{base}/api/health"
     else:
-        endpoint = "http://localhost:8000/api/health"
+        endpoint = "https://chunksmith.onrender.com/api/health"
     log_message(f"Using health endpoint: {endpoint}", "INFO")
     return endpoint
 

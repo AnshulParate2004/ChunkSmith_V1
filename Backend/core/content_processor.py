@@ -333,6 +333,7 @@ TEXT CONTENT:
         start_count = max_index + 1 if max_index > 0 else 1
 
         image_counter = {'count': start_count}
+        self.image_counter = 0  # will be updated after extraction
         
         # Step 1: Extract content from all chunks (synchronous)
         # print(f"\nExtracting content from {total_chunks} chunks...")
@@ -353,8 +354,10 @@ TEXT CONTENT:
             
              chunks_data.append(content_data)
         
+        # Save final image count to instance so callers can read processor.image_counter
+        self.image_counter = image_counter['count'] - start_count
         # print(f"\nContent extraction complete!")
-        # print(f"Total images saved: {image_counter['count'] - 1}")
+        # print(f"Total images saved: {self.image_counter}")
         
         # Step 2: Process all chunks asynchronously with different API keys
         # print(f"\nStarting async AI processing...")

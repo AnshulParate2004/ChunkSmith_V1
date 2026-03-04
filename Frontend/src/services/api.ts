@@ -1,4 +1,4 @@
-export const API_BASE_URL = 'http://localhost:8000/api';
+export const API_BASE_URL = 'https://chunksmith.onrender.com/api';
 
 export interface ProcessSettings {
   languages: string;

@@ -53,11 +53,12 @@ const ChatPage = () => {
   // When we create a brand-new conversation and immediately stream,
   // we don't want the initial auto history load to overwrite the
   // in-flight streaming messages (which already contain images).
-  const [skipNextHistoryLoad, setSkipNextHistoryLoad] = useState(false);
+  const skipNextHistoryLoadRef = useRef(false);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const eventSourceRef = useRef<EventSource | null>(null);
   const streamingMessageIdRef = useRef<string>('');
+  const currentImagesRef = useRef<ChatImage[]>([]);
 
   const activeConversation = conversations.find((c) => c.id === activeConversationId) || null;
   const [titleDraft, setTitleDraft] = useState<string>("");
@@ -81,15 +82,13 @@ const ChatPage = () => {
   // Fetch messages when active conversation changes
   useEffect(() => {
     if (activeConversationId && session?.access_token) {
-      if (skipNextHistoryLoad) {
-        // Skip the very first history load after creating a new conversation.
-        // The live streaming state already has the correct text + images.
-        setSkipNextHistoryLoad(false);
+      if (skipNextHistoryLoadRef.current) {
+        skipNextHistoryLoadRef.current = false;
         return;
       }
       loadMessages(activeConversationId);
     }
-  }, [activeConversationId, session?.access_token, skipNextHistoryLoad]);
+  }, [activeConversationId, session?.access_token]);
 
   // Clean up event source
   useEffect(() => {
@@ -225,8 +224,7 @@ const ChatPage = () => {
         setActiveConversationId(targetConversationId);
         // We just created a fresh conversation and will immediately stream into it.
         // Skip the first automatic history load so it doesn't race with streaming
-        // and overwrite images/text that are already in local state.
-        setSkipNextHistoryLoad(true);
+        skipNextHistoryLoadRef.current = true;
       } catch (error) {
         toast.error('Failed to start conversation');
         return;
@@ -237,6 +235,7 @@ const ChatPage = () => {
     setInputMessage('');
     setStreamingSteps([]);
     setCurrentImages([]);
+    currentImagesRef.current = [];
 
     // Add user message locally (it's also saved in DB by backend)
     const userMsg: Message = {
@@ -366,11 +365,17 @@ const ChatPage = () => {
           break;
 
         case 'image': {
-          // Maintain only the most recent 5 images for the current answer
-          setCurrentImages(prev => {
-            const next = [...prev, { filename: data.filename, data: data.data }];
-            return next.slice(-5);
-          });
+          const newImage = { filename: data.filename, data: data.data };
+          currentImagesRef.current = [...currentImagesRef.current, newImage].slice(-5);
+          setCurrentImages(currentImagesRef.current);
+          // Also update the streaming message directly
+          setMessages(prev =>
+            prev.map(msg =>
+              msg.id === streamingMessageIdRef.current
+                ? { ...msg, images: [...(msg.images || []), newImage].slice(-5) }
+                : msg
+            ).slice(-10)
+          );
           break;
         }
 
@@ -418,15 +423,7 @@ const ChatPage = () => {
             updateStep(writeStepId, { status: 'complete', label: 'Answer complete' });
           }
 
-          setMessages(prev =>
-            prev
-              .map(msg =>
-                msg.id === streamingMessageIdRef.current
-                  ? { ...msg, images: [...(msg.images || []), ...currentImages].slice(-5) }
-                  : msg
-              )
-              .slice(-10)
-          );
+          // Images are already attached during 'image' events via currentImagesRef
           break;
 
         case 'end':
