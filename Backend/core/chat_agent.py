@@ -21,6 +21,7 @@ from dotenv import load_dotenv
 from pydantic import BaseModel, Field
 from tavily import TavilyClient
 import logging
+from tools.chat_tools import get_chat_tools
 
 
 load_dotenv()
@@ -131,69 +132,7 @@ class ChatAgent:
         self._current_image_index: Dict[int, Dict] = {}
 
         # ── Tool Definitions ──────────────────────────────────────────────────
-        @tool
-        def project_search(query: str) -> str:
-            """
-            Search the project's processed documents for context regarding the user's query.
-            Call this tool ONCE for the user's question. Do NOT call it again with a similar query.
-            """
-            results = self.vector_manager.search(
-                vectorstore=self.vectorstore, query=query, k=3
-            )
-
-            def parse_json(val, default):
-                if isinstance(val, str):
-                    try:
-                        return json.loads(val)
-                    except Exception:
-                        return default
-                return val or default
-
-            context_chunks = []
-            for doc in results:
-                context_chunks.append({
-                    "content": doc.page_content,
-                    "original_text": doc.metadata.get("original_text", ""),
-                    "ai_summary": doc.metadata.get("ai_summary", ""),
-                    "image_paths": parse_json(doc.metadata.get("image_paths"), []),
-                    "image_base64": parse_json(doc.metadata.get("image_base64"), []),
-                    "image_interpretation": parse_json(doc.metadata.get("image_interpretation"), []),
-                    "table_interpretation": parse_json(doc.metadata.get("table_interpretation"), []),
-                    "page_numbers": parse_json(doc.metadata.get("page_numbers"), []),
-                    "tables": parse_json(doc.metadata.get("raw_tables_html"), [])
-                })
-
-            # Persist to instance-level shared dicts so chat_stream can read them
-            # after the graph completes (LangGraph copies state, so tool-side mutations
-            # to the state dict are not visible outside the tool call).
-            self._current_chunks.extend(context_chunks)
-            new_images = self.build_image_index(context_chunks)
-            self._current_image_index.update(new_images)
-
-            # Return the formatted context so the LLM can use it
-            formatted = self.format_context(context_chunks, self._current_image_index)
-            return f"Found {len(context_chunks)} sections from project documents:\n\n{formatted}"
-
-        @tool
-        def web_search(query: str) -> str:
-            """
-            Search the web for general knowledge or up-to-date facts.
-            ONLY use this when project_search explicitly returned no useful results.
-            Do NOT use this for questions about the project content.
-            """
-            results = self.web_search_logic(query, max_results=3)
-            if not results:
-                return "No web results found."
-
-            formatted = ["=== WEB SEARCH RESULTS ==="]
-            for i, item in enumerate(results, 1):
-                title = item.get("title") or f"Result {i}"
-                snippet = item.get("content") or item.get("snippet") or ""
-                url = item.get("url") or ""
-                formatted.append(f"- {title}: {snippet} (URL: {url})")
-            return "\n".join(formatted)
-
-        tools = [project_search, web_search]
+        tools = get_chat_tools(self)
         tool_node = ToolNode(tools)
         llm_with_tools = self.llm.bind_tools(tools)
         final_answer_llm = self.llm.with_structured_output(ChatResponse)
@@ -212,30 +151,33 @@ class ChatAgent:
                         tool_call_counts[tc["name"]] = tool_call_counts.get(tc["name"], 0) + 1
 
             already_searched = tool_call_counts.get("project_search", 0) > 0
+            already_custom = tool_call_counts.get("customized_retriever", 0) > 0
             already_web = tool_call_counts.get("web_search", 0) > 0
 
             system_content = (
-                "You are an AI research assistant with two tools:\n"
-                "  1. project_search – searches the user's uploaded project documents.\n"
-                "  2. web_search – searches the live web via Tavily.\n"
+                "You are an AI research assistant with three tools:\n"
+                "  1. project_search – searches the user's uploaded project documents for general questions.\n"
+                "  2. customized_retriever - searches the project documents specifically for tables, images, or text based on flags. You can also specify `search_depth` (default 15) and `return_limit` (default 3).\n"
+                "  3. web_search – searches the live web via Tavily.\n"
                 "\nRULES (follow strictly):\n"
-                "- Call project_search EXACTLY ONCE per user question. Never repeat it.\n"
-                "- Only call web_search if project_search returned no useful results AND the question requires external facts.\n"
+                "- USE customized_retriever INSTEAD OF project_search if the user EXPLICITLY asks for tables, images, or specific content types.\n"
+                "- Call EITHER project_search OR customized_retriever EXACTLY ONCE per user question. Never both, and never repeat them.\n"
+                "- Only call web_search if the project tools returned no useful results AND the question requires external facts.\n"
                 "- Call web_search at most ONCE.\n"
                 "- Once you have tool results, stop calling tools and go straight to your answer.\n"
             )
-            if already_searched:
+            if already_searched or already_custom:
                 system_content += (
-                    "\n⚠ You have ALREADY called project_search. Do NOT call it again. "
+                    "\n⚠ You have ALREADY searched the project documents. Do NOT call project_search or customized_retriever again. "
                     "Use the results you already received to answer the question.\n"
                 )
             if already_web:
                 system_content += (
                     "\n⚠ You have ALREADY called web_search. Do NOT call it again.\n"
                 )
-            if already_searched and already_web:
+            if (already_searched or already_custom) and already_web:
                 system_content += (
-                    "\n⚠ You have used both tools. DO NOT call any more tools. "
+                    "\n⚠ You have used both internal and external tools. DO NOT call any more tools. "
                     "Generate your final answer now.\n"
                 )
 
@@ -501,11 +443,11 @@ class ChatAgent:
                     tool_input = event["data"].get("input", {})
                     query = tool_input.get("query", "...")
                     
-                    if tool_name == "project_search":
+                    if tool_name in ["project_search", "customized_retriever"]:
                         yield {
                             "type": "search_start",
                             "data": {
-                                "message": f"Searching project documents for: {query}",
+                                "message": f"Searching project documents for: {query}...",
                                 "query": query
                             }
                         }
@@ -520,7 +462,7 @@ class ChatAgent:
                         
                 elif kind == "on_tool_end":
                     tool_name = event["name"]
-                    if tool_name == "project_search":
+                    if tool_name in ["project_search", "customized_retriever"]:
                         yield {
                             "type": "search_complete",
                             "data": {
