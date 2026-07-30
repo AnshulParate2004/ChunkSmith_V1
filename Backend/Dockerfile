@@ -16,7 +16,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 RUN pip install --no-cache-dir uv
 
 # Copy dependency files
-COPY Backend/pyproject.toml Backend/uv.lock* ./
+COPY pyproject.toml uv.lock* ./
 
 # Install Python dependencies
 RUN uv pip install --system --no-cache -r pyproject.toml \
@@ -34,13 +34,12 @@ RUN mkdir -p data/uploads data/images data/pickle data/json data/chroma_db
 ENV PYTHONUNBUFFERED=1
 ENV PYTHONDONTWRITEBYTECODE=1
 
-# Copy Backend Code
-# We assume build context is the PROJECT ROOT
-COPY Backend/ .
+# Copy application code
+COPY . .
 
 EXPOSE 8000
 
 HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
-    CMD curl -f https://chunksmith.onrender.com/api/health || exit 1
+    CMD curl -f http://localhost:8000/api/health || exit 1
 
 CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]

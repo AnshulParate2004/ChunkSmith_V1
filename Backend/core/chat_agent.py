@@ -13,7 +13,7 @@ from langgraph.graph import StateGraph, START, END
 from langgraph.graph.message import add_messages
 from langgraph.prebuilt import ToolNode
 
-from langchain_openai import AzureChatOpenAI
+from langchain_litellm import ChatLiteLLM
 from supabase import create_client
 from utils.vector_store import VectorStoreManager
 from config.settings import settings
@@ -94,11 +94,12 @@ class ChatAgent:
         # Initialize shown images tracking
         self.shown_images = set()
 
-        # Initialize Model (No structured output globally here, we bind tools instead)
-        self.llm = AzureChatOpenAI(
-            azure_endpoint=self.azure_endpoint,
+        # Initialize Model via LiteLLM, routed to Azure OpenAI
+        # (No structured output globally here, we bind tools instead)
+        self.llm = ChatLiteLLM(
+            model=f"azure/{settings.AZURE_OPENAI_CHAT_MODEL}",
             api_key=self.azure_api_key,
-            azure_deployment=settings.AZURE_OPENAI_CHAT_MODEL,
+            api_base=self.azure_endpoint,
             api_version=self.azure_api_version,
             temperature=0.2,
         )
