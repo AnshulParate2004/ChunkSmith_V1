@@ -14,26 +14,34 @@ function determineAgentPlan(message: string): { useRag: boolean; ragQuery: strin
   const trimmed = message.trim();
   const lower = trimmed.toLowerCase();
 
-  // Common greetings, gratitude, small talk, identity
+  // 1. Meta questions about the AI assistant, its tools, or its capabilities
+  const metaAssistantRegex =
+    /\b(which tools|what tools|tools you have|tools do you have|your tools|what can you do|what are your capabilities|who are you|introduce yourself|what are you|how do you work|how do you operate|what models do you use|who built you|who created you|help me with using|how to use)\b/i;
+
+  if (metaAssistantRegex.test(lower)) {
+    return { useRag: false, ragQuery: "", intent: "assistant_meta" };
+  }
+
+  // 2. Common greetings, gratitude, small talk
   const conversationalRegex =
-    /^(hi|hello|hey|heya|howdy|greetings|good\s+(morning|afternoon|evening|night|day)|how\s+are\s+you.*|who\s+are\s+you.*|what\s+can\s+you\s+do.*|what\s+is\s+your\s+name.*|what\s+are\s+you.*|thanks.*|thank\s+you.*|bye.*|goodbye.*|ok.*|okay.*|cool.*|nice.*|great.*)[\s!.?]*$/i;
+    /^(hi|hello|hey|heya|howdy|greetings|good\s+(morning|afternoon|evening|night|day)|how\s+are\s+you.*|what\s+is\s+your\s+name.*|thanks.*|thank\s+you.*|bye.*|goodbye.*|ok.*|okay.*|cool.*|nice.*|great.*)[\s!.?]*$/i;
 
   if (conversationalRegex.test(trimmed)) {
     return { useRag: false, ragQuery: "", intent: "conversational" };
   }
 
-  // Short words without question intent
+  // 3. Short casual words without question intent
   const words = lower.split(/\s+/).filter(Boolean);
   if (
     words.length <= 2 &&
-    !/(what|why|how|when|where|which|who|explain|tell|is|are|does|do|can|define|meaning|table|diagram|image|car|plant|tissue|cell|water|salt|acid|base|force)/i.test(
+    !/(what|why|how|when|where|which|who|explain|tell|is|are|does|do|can|define|meaning|table|diagram|image|figure|car|plant|tissue|cell|water|salt|acid|base|force)/i.test(
       lower
     )
   ) {
     return { useRag: false, ragQuery: "", intent: "conversational" };
   }
 
-  // Otherwise, user is asking a domain/document question -> trigger Document Search Tool!
+  // 4. Otherwise, user is asking a domain/document question -> trigger Document Search Tool!
   const cleanedQuery =
     trimmed
       .replace(/^(can you\s+|could you\s+|please\s+|tell me\s+|kindly\s+)/i, "")
@@ -173,8 +181,10 @@ export async function GET(
             }
           }
 
-          // Filter out low confidence vector results (below 0.45 similarity score)
-          const relevantResults = searchResults.filter((r) => r.score === undefined || r.score >= 0.45);
+          // Filter out low confidence vector results (require high semantic relevance >= 0.65 for images & grounding)
+          const relevantResults = searchResults.filter(
+            (r) => (r.score !== undefined ? r.score >= 0.65 : true)
+          );
 
           // Complete search step
           send("search_complete", {
@@ -184,7 +194,7 @@ export async function GET(
             ),
           });
 
-          // Extract images ONLY from relevant results
+          // Extract images ONLY from high-confidence relevant results
           relevantResults.forEach((r) => {
             const meta = r.metadata || {};
             const paths: string[] = meta.image_paths || r.image_paths || [];
@@ -225,7 +235,16 @@ export async function GET(
         // 5. Build prompt based on intent
         let systemPrompt = "";
 
-        if (plan.useRag && searchResults.length > 0) {
+        if (plan.intent === "assistant_meta") {
+          systemPrompt = `You are ChunkSmith AI, an autonomous multimodal document analysis assistant.
+When asked about your tools, capabilities, or what you can do:
+Clearly explain your core capabilities:
+1. **Document Vector Search**: High-dimensional semantic search in your indexed project documents using Qdrant.
+2. **Multimodal Content Extraction & Analysis**: Reading, analyzing, and synthesizing text, complex data tables, and diagrams/figures extracted from your PDFs.
+3. **Context-Grounded Reasoning**: Answering domain questions strictly grounded in your project documents with citations.
+4. **Interactive Document Chat**: Conversational exploration and real-time streaming answers across all uploaded files.
+Be concise, clear, and professional.`;
+        } else if (plan.useRag && searchResults.length > 0) {
           const context = searchResults
             .map((r, i) => `[Source ${i + 1}]:\n${r.page_content}`)
             .join("\n\n");
