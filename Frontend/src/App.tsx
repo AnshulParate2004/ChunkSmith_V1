@@ -1,22 +1,25 @@
+"use client";
+
 import { Toaster } from "@/components/ui/toaster";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route, Navigate, Outlet } from "react-router-dom";
-import LandingPage from "./pages/LandingPage";
-import Dashboard from "./pages/Dashboard";
-import ProjectPage from "./pages/ProjectPage";
-import UploadPage from "./pages/UploadPage";
-import ProcessingPage from "./pages/ProcessingPage";
-import SearchPage from "./pages/SearchPage";
-import DocumentsPage from "./pages/DocumentsPage";
-import ChatPage from "./pages/ChatPage";
-import NotFound from "./pages/NotFound";
-import AuthPage from "./pages/AuthPage"; // New
-import TermsPage from "./pages/TermsPage";
-import { AuthProvider, useAuth } from "./context/AuthContext"; // New
+import LandingPage from "./views/LandingPage";
+import Dashboard from "./views/Dashboard";
+import ProjectPage from "./views/ProjectPage";
+import UploadPage from "./views/UploadPage";
+import ProcessingPage from "./views/ProcessingPage";
+import SearchPage from "./views/SearchPage";
+import DocumentsPage from "./views/DocumentsPage";
+import ChatPage from "./views/ChatPage";
+import NotFound from "./views/NotFound";
+import AuthPage from "./views/AuthPage";
+import TermsPage from "./views/TermsPage";
+import { AuthProvider, useAuth } from "./context/AuthContext";
 import { Loader2 } from "lucide-react";
 import { CookieConsentBanner } from "./components/CookieConsentBanner";
+import { useEffect, useState } from "react";
 
 const queryClient = new QueryClient();
 
@@ -39,41 +42,51 @@ const ProtectedRoute = () => {
   return <Outlet />;
 };
 
-const App = () => (
-  <AuthProvider>
-    <QueryClientProvider client={queryClient}>
-      <TooltipProvider>
-        <Toaster />
-        <Sonner />
-        <BrowserRouter>
-          <div className="min-h-screen relative">
-            <div className="relative z-10">
-              <Routes>
-                {/* Public Routes */}
-                <Route path="/" element={<LandingPage />} />
-                <Route path="/auth" element={<AuthPage />} />
-                <Route path="/terms" element={<TermsPage />} />
+export default function App() {
+  const [mounted, setMounted] = useState(false);
 
-                {/* Protected Routes */}
-                <Route element={<ProtectedRoute />}>
-                  <Route path="/dashboard" element={<Dashboard />} />
-                  <Route path="/project/:projectId" element={<ProjectPage />} />
-                  <Route path="/project/:projectId/upload" element={<UploadPage />} />
-                  <Route path="/processing/:documentId" element={<ProcessingPage />} />
-                  <Route path="/chat/:projectId" element={<ChatPage />} />
-                  <Route path="/search" element={<SearchPage />} />
-                  <Route path="/documents" element={<DocumentsPage />} />
-                </Route>
+  useEffect(() => {
+    setMounted(true);
+  }, []);
 
-                <Route path="*" element={<NotFound />} />
-              </Routes>
+  if (!mounted) {
+    return null;
+  }
+
+  return (
+    <AuthProvider>
+      <QueryClientProvider client={queryClient}>
+        <TooltipProvider>
+          <Toaster />
+          <Sonner />
+          <BrowserRouter>
+            <div className="min-h-screen relative">
+              <div className="relative z-10">
+                <Routes>
+                  {/* Public Routes */}
+                  <Route path="/" element={<LandingPage />} />
+                  <Route path="/auth" element={<AuthPage />} />
+                  <Route path="/terms" element={<TermsPage />} />
+
+                  {/* Protected Routes */}
+                  <Route element={<ProtectedRoute />}>
+                    <Route path="/dashboard" element={<Dashboard />} />
+                    <Route path="/project/:projectId" element={<ProjectPage />} />
+                    <Route path="/project/:projectId/upload" element={<UploadPage />} />
+                    <Route path="/processing/:documentId" element={<ProcessingPage />} />
+                    <Route path="/chat/:projectId" element={<ChatPage />} />
+                    <Route path="/search" element={<SearchPage />} />
+                    <Route path="/documents" element={<DocumentsPage />} />
+                  </Route>
+
+                  <Route path="*" element={<NotFound />} />
+                </Routes>
+              </div>
+              <CookieConsentBanner />
             </div>
-            <CookieConsentBanner />
-          </div>
-        </BrowserRouter>
-      </TooltipProvider>
-    </QueryClientProvider>
-  </AuthProvider>
-);
-
-export default App;
+          </BrowserRouter>
+        </TooltipProvider>
+      </QueryClientProvider>
+    </AuthProvider>
+  );
+}
