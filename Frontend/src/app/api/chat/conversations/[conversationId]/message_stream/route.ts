@@ -10,44 +10,102 @@ export const revalidate = 0;
 const convManager = new ConversationManager();
 const vectorManager = new VectorStoreManager();
 
-function determineAgentPlan(message: string): { useRag: boolean; ragQuery: string; intent: string } {
+async function determineAgentPlan(
+  message: string,
+  history: Array<{ role: string; content: string }>,
+  keyPool: KeyPoolRotator
+): Promise<{ useRag: boolean; ragQuery: string; intent: string }> {
   const trimmed = message.trim();
-  const lower = trimmed.toLowerCase();
 
-  // 1. Meta questions about the AI assistant, its tools, or its capabilities
-  const metaAssistantRegex =
-    /\b(which tools|what tools|tools you have|tools do you have|your tools|what can you do|what are your capabilities|who are you|introduce yourself|what are you|how do you work|how do you operate|what models do you use|who built you|who created you|help me with using|how to use)\b/i;
-
-  if (metaAssistantRegex.test(lower)) {
-    return { useRag: false, ragQuery: "", intent: "assistant_meta" };
-  }
-
-  // 2. Common greetings, gratitude, small talk
-  const conversationalRegex =
-    /^(hi|hello|hey|heya|howdy|greetings|good\s+(morning|afternoon|evening|night|day)|how\s+are\s+you.*|what\s+is\s+your\s+name.*|thanks.*|thank\s+you.*|bye.*|goodbye.*|ok.*|okay.*|cool.*|nice.*|great.*)[\s!.?]*$/i;
-
-  if (conversationalRegex.test(trimmed)) {
-    return { useRag: false, ragQuery: "", intent: "conversational" };
-  }
-
-  // 3. Short casual words without question intent
-  const words = lower.split(/\s+/).filter(Boolean);
+  // 1. Instant fast-path for trivial single-word greetings / gratitude (0ms latency optimization)
   if (
-    words.length <= 2 &&
-    !/(what|why|how|when|where|which|who|explain|tell|is|are|does|do|can|define|meaning|table|diagram|image|figure|car|plant|tissue|cell|water|salt|acid|base|force)/i.test(
-      lower
+    /^(hi|hello|hey|heya|howdy|greetings|good\s+(morning|afternoon|evening|night)|thanks|thank\s+you|ok|okay|cool|nice|great)[\s!.?]*$/i.test(
+      trimmed
     )
   ) {
     return { useRag: false, ragQuery: "", intent: "conversational" };
   }
 
-  // 4. Otherwise, user is asking a domain/document question -> trigger Document Search Tool!
-  const cleanedQuery =
+  // 2. Instant fast-path for direct meta assistant questions
+  if (
+    /^(what tools|which tools|what can you do|who are you|introduce yourself|what are your capabilities)[\s?.!]*$/i.test(
+      trimmed
+    )
+  ) {
+    return { useRag: false, ragQuery: "", intent: "assistant_meta" };
+  }
+
+  // 3. True Agentic Tool-Calling: Let the LLM Agent decide whether to search and formulate its query
+  const recentContext = history
+    .slice(-4)
+    .map((h) => `${h.role === "user" ? "User" : "Assistant"}: ${h.content}`)
+    .join("\n");
+
+  const plannerPrompt = `You are the Autonomous Planning Agent for ChunkSmith, an intelligent multimodal document analysis system.
+You have access to the following tool:
+- document_search(query: string): Searches through indexed project documents for technical facts, scientific explanations, data, definitions, and diagrams.
+
+Recent conversation context:
+${recentContext || "(No prior conversation)"}
+
+User message: "${trimmed}"
+
+DECISION INSTRUCTIONS:
+1. If the user message is casual conversation, greeting, polite chit-chat, or asking what tools you have, choose "direct_answer".
+2. If the user is asking about any scientific, technical, or document concept, or asking follow-up questions referencing previous topics, choose "document_search".
+3. When choosing "document_search", YOU MUST FORMULATE THE OPTIMAL SEARCH QUERY:
+   - Fix all typos, misspellings, and phonetic slang (e.g. "hat i alveid" -> "what is alveoli", "mitocandria" -> "mitochondria").
+   - Resolve pronouns ("it", "they", "its function") using the conversation context.
+   - Strip conversational filler ("yeah explain me", "can you tell me", "please show").
+   - Output a concise, canonical search query (2 to 6 keywords) ideal for vector search.
+
+Respond ONLY with valid JSON in this exact structure:
+{
+  "action": "document_search" | "direct_answer",
+  "query": "the search query you formulated (or empty string if direct_answer)",
+  "intent": "document_search" | "conversational" | "assistant_meta"
+}`;
+
+  try {
+    const rawPlan = await keyPool.chatCompletion(
+      [
+        { role: "system", content: "You are an accurate, fast JSON-only tool-calling planner agent." },
+        { role: "user", content: plannerPrompt },
+      ],
+      { temperature: 0.1 }
+    );
+
+    const jsonMatch = rawPlan.match(/\{[\s\S]*?\}/);
+    if (jsonMatch) {
+      const parsed = JSON.parse(jsonMatch[0]);
+      if (parsed.action === "document_search" && parsed.query) {
+        return {
+          useRag: true,
+          ragQuery: String(parsed.query).trim(),
+          intent: "document_search",
+        };
+      } else if (parsed.action === "direct_answer") {
+        return {
+          useRag: false,
+          ragQuery: "",
+          intent: parsed.intent || "conversational",
+        };
+      }
+    }
+  } catch (err) {
+    console.warn("Agent planner LLM error, falling back to heuristic query:", err);
+  }
+
+  // Fallback if planner LLM had an issue
+  const fallbackCleaned =
     trimmed
-      .replace(/^(can you\s+|could you\s+|please\s+|tell me\s+|kindly\s+)/i, "")
+      .replace(
+        /^(can you\s+|could you\s+|please\s+|tell me\s+|kindly\s+|explain\s+me\s+|yeah\s+explain\s+me\s+)/i,
+        ""
+      )
       .trim() || trimmed;
 
-  return { useRag: true, ragQuery: cleanedQuery, intent: "document_search" };
+  return { useRag: true, ragQuery: fallbackCleaned, intent: "document_search" };
 }
 
 export async function GET(
@@ -152,8 +210,26 @@ export async function GET(
         // 1. Connected
         send("connected");
 
-        // 2. Agent Planning (decide whether to invoke document search tool or answer directly)
-        const plan = determineAgentPlan(message);
+        // KeyPool for agent planning and streaming
+        const keyPool = new KeyPoolRotator({
+          geminiKeys: serverConfig.GEMINI_KEYS,
+          groqKeys: serverConfig.GROQ_KEYS,
+          geminiModels: serverConfig.GEMINI_MODELS,
+          groqModels: serverConfig.GROQ_MODELS,
+        });
+
+        // Load conversation history for contextual agent reasoning
+        let history: Array<{ role: string; content: string }> = [];
+        try {
+          const pastMsgs = await convManager.getMessages(conversationId);
+          history = pastMsgs.slice(-6).map((m: any) => ({
+            role: m.role === "user" ? "user" : "assistant",
+            content: m.content,
+          }));
+        } catch {}
+
+        // 2. Agent Planning (LLM Agent decides whether to invoke search and writes query)
+        const plan = await determineAgentPlan(message, history, keyPool);
 
         send("planner_plan", {
           use_rag: plan.useRag,
@@ -369,28 +445,11 @@ Respond politely and concisely to user greetings and general conversation.
 Let the user know that you are ready to answer questions about their uploaded project documents.`;
         }
 
-        // Get past messages for context
-        let history: Array<{ role: string; content: string }> = [];
-        try {
-          const pastMsgs = await convManager.getMessages(conversationId);
-          history = pastMsgs.slice(-6).map((m: any) => ({
-            role: m.role === "user" ? "user" : "assistant",
-            content: m.content,
-          }));
-        } catch {}
-
         const messages = [
           { role: "system", content: systemPrompt },
           ...history,
           { role: "user", content: message },
         ];
-
-        const keyPool = new KeyPoolRotator({
-          geminiKeys: serverConfig.GEMINI_KEYS,
-          groqKeys: serverConfig.GROQ_KEYS,
-          geminiModels: serverConfig.GEMINI_MODELS,
-          groqModels: serverConfig.GROQ_MODELS,
-        });
 
         // Load candidate image bytes if vision mode is active
         let visionImages: Array<{ mimeType: string; data: string }> = [];
