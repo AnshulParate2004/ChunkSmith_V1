@@ -122,6 +122,12 @@ export async function GET(
       ? parseFloat(scoreThresholdParam)
       : 0.60;
 
+  const topKParam = url.searchParams.get("topK");
+  const topK =
+    topKParam !== null && !isNaN(parseInt(topKParam, 10))
+      ? Math.min(Math.max(parseInt(topKParam, 10), 1), 10)
+      : 5;
+
   const imageSelectionMode = (url.searchParams.get("imageSelectionMode") || "summary").toLowerCase();
 
   if (!message) {
@@ -289,7 +295,7 @@ Title:`;
           send("search_start", { query: plan.ragQuery });
 
           try {
-            searchResults = await vectorManager.search(projectId, plan.ragQuery, 6);
+            searchResults = await vectorManager.search(projectId, plan.ragQuery, topK);
           } catch (e) {
             console.warn("Vector search error:", e);
           }
@@ -337,7 +343,7 @@ Title:`;
                 }
 
                 scoredChunks.sort((a, b) => b.score - a.score);
-                searchResults = scoredChunks.slice(0, 6).map((s) => ({
+                searchResults = scoredChunks.slice(0, topK).map((s) => ({
                   score: s.score / 10,
                   page_content:
                     s.chunk.enhanced_content ||
@@ -353,9 +359,9 @@ Title:`;
           }
 
           // Filter out results below user scoreThreshold
-          const relevantResults = searchResults.filter(
-            (r) => (r.score !== undefined ? r.score >= scoreThreshold : true)
-          );
+          const relevantResults = searchResults
+            .filter((r) => (r.score !== undefined ? r.score >= scoreThreshold : true))
+            .slice(0, topK);
 
           // Complete search step
           send("search_complete", {

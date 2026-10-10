@@ -4,7 +4,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card } from '@/components/ui/card';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { ArrowLeft, Send, Loader2, SlidersHorizontal, Image as ImageIcon, Eye, FileText, Ban } from 'lucide-react';
+import { ArrowLeft, Send, Loader2, SlidersHorizontal, Image as ImageIcon, Eye, FileText, Ban, Layers } from 'lucide-react';
 import { apiService, API_BASE_URL } from '@/services/api';
 import { toast } from 'sonner';
 import { StreamingSteps, StreamingStep } from '@/components/Chat/StreamingSteps';
@@ -52,6 +52,7 @@ const ChatPage = () => {
   const [isStreaming, setIsStreaming] = useState(false);
   const [streamingSteps, setStreamingSteps] = useState<StreamingStep[]>([]);
   const [scoreThreshold, setScoreThreshold] = useState<number>(0.60);
+  const [topKChunks, setTopKChunks] = useState<number>(5);
   const [imageSelectionMode, setImageSelectionMode] = useState<'summary' | 'vision' | 'always' | 'off'>('summary');
 
   // When we create a brand-new conversation and immediately stream,
@@ -271,7 +272,7 @@ const ChatPage = () => {
     const encodedMessage = encodeURIComponent(message);
     const encodedToken = encodeURIComponent(session.access_token);
 
-    const url = `${API_BASE_URL}/chat/conversations/${targetConversationId}/message_stream?message=${encodedMessage}&token=${encodedToken}&scoreThreshold=${scoreThreshold}&imageSelectionMode=${imageSelectionMode}`;
+    const url = `${API_BASE_URL}/chat/conversations/${targetConversationId}/message_stream?message=${encodedMessage}&token=${encodedToken}&scoreThreshold=${scoreThreshold}&imageSelectionMode=${imageSelectionMode}&topK=${topKChunks}`;
 
     const eventSource = new EventSource(url);
     eventSourceRef.current = eventSource;
@@ -620,6 +621,38 @@ const ChatPage = () => {
                 >
                   Strict (75%)
                 </Button>
+              </div>
+
+              {/* Retrieved Chunks (Top-K) Section */}
+              <div className="pt-3 border-t space-y-1">
+                <div className="flex items-center justify-between">
+                  <h4 className="text-sm font-semibold text-foreground flex items-center gap-1.5">
+                    <Layers className="w-4 h-4 text-primary" />
+                    <span>Retrieved Chunks</span>
+                  </h4>
+                  <span className="text-xs font-bold text-primary px-2 py-0.5 rounded bg-primary/10">
+                    {topKChunks} Chunks
+                  </span>
+                </div>
+                <p className="text-xs text-muted-foreground leading-relaxed">
+                  Maximum matching sections retrieved from documents (sliding from 1 to 10).
+                </p>
+
+                <div className="space-y-2 pt-1.5">
+                  <Slider
+                    min={1}
+                    max={10}
+                    step={1}
+                    value={[topKChunks]}
+                    onValueChange={(vals) => setTopKChunks(vals[0])}
+                    className="w-full cursor-pointer"
+                  />
+                  <div className="flex justify-between text-[10px] text-muted-foreground font-mono">
+                    <span>1 (Narrow)</span>
+                    <span>5 (Default)</span>
+                    <span>10 (Max Depth)</span>
+                  </div>
+                </div>
               </div>
 
               {/* Figure Verification Mode Section */}
