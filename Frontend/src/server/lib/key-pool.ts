@@ -1,15 +1,9 @@
 import { GoogleGenAI } from "@google/genai";
 import Groq from "groq-sdk";
-import OpenAI from "openai";
 
 export interface KeyPoolConfig {
   geminiKeys: string[];
   groqKeys: string[];
-  azureKey?: string;
-  azureEndpoint?: string;
-  azureModel?: string;
-  azureApiVersion?: string;
-  openaiKey?: string;
 }
 
 export class KeyPoolRotator {
@@ -17,25 +11,16 @@ export class KeyPoolRotator {
   private groqKeys: string[] = [];
   private geminiIndex = 0;
   private groqIndex = 0;
-  private azureConfig: any;
-  private openaiKey?: string;
 
   constructor(config: KeyPoolConfig) {
     this.geminiKeys = config.geminiKeys.filter((k) => k && k.trim().length > 0);
     this.groqKeys = config.groqKeys.filter((k) => k && k.trim().length > 0);
-    this.azureConfig = {
-      apiKey: config.azureKey,
-      endpoint: config.azureEndpoint,
-      model: config.azureModel || "gpt-4o",
-      apiVersion: config.azureApiVersion || "2024-12-01-preview",
-    };
-    this.openaiKey = config.openaiKey;
   }
 
-  // Round-robin with retry across all Gemini keys
+  // Round-robin with retry across all Gemini keys for vector embeddings
   async getEmbedding(text: string): Promise<number[]> {
     if (this.geminiKeys.length === 0) {
-      return this.getAzureOrOpenaiEmbedding(text);
+      throw new Error("[KeyPool] No Gemini API keys configured for embeddings.");
     }
 
     const startIndex = this.geminiIndex;
@@ -63,32 +48,10 @@ export class KeyPoolRotator {
       }
     }
 
-    // If all Gemini keys failed, fallback to Azure/OpenAI
-    return this.getAzureOrOpenaiEmbedding(text);
+    throw new Error("[KeyPool] All Gemini embedding keys exhausted or failed.");
   }
 
-  private async getAzureOrOpenaiEmbedding(text: string): Promise<number[]> {
-    if (this.azureConfig.apiKey && this.azureConfig.endpoint) {
-      const endpoint = this.azureConfig.endpoint.replace(/\/$/, "");
-      const url = `${endpoint}/openai/deployments/text-embedding-3-large/embeddings?api-version=${this.azureConfig.apiVersion}`;
-      const res = await fetch(url, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "api-key": this.azureConfig.apiKey,
-        },
-        body: JSON.stringify({ input: text }),
-      });
-      if (res.ok) {
-        const json = await res.json();
-        return json.data[0].embedding;
-      }
-    }
-
-    throw new Error("[KeyPool] All Gemini and fallback embedding keys failed.");
-  }
-
-  // Chat completion with fallback: Gemini pool -> Groq pool -> Azure/OpenAI
+  // Chat completion with fallback: Gemini pool <-> Groq pool
   async chatCompletion(
     messages: Array<{ role: string; content: string }>,
     options: { temperature?: number; maxTokens?: number } = {}
@@ -121,7 +84,7 @@ export class KeyPoolRotator {
       }
     }
 
-    // 2. Try Groq Keys Pool (Ultra fast Llama 3.3 / 3.1)
+    // 2. Try Groq Keys Pool (Ultra fast Llama 3.3 70B)
     if (this.groqKeys.length > 0) {
       const startGroq = this.groqIndex;
       let groqAttempts = 0;
@@ -151,24 +114,7 @@ export class KeyPoolRotator {
       }
     }
 
-    // 3. Fallback to Azure OpenAI / OpenAI
-    if (this.azureConfig.apiKey && this.azureConfig.endpoint) {
-      const endpoint = this.azureConfig.endpoint.replace(/\/$/, "");
-      const azureClient = new OpenAI({
-        apiKey: this.azureConfig.apiKey,
-        baseURL: `${endpoint}/openai/deployments/${this.azureConfig.model}`,
-        defaultQuery: { "api-version": this.azureConfig.apiVersion },
-        defaultHeaders: { "api-key": this.azureConfig.apiKey },
-      });
-      const res = await azureClient.chat.completions.create({
-        model: this.azureConfig.model,
-        messages: messages as any,
-        temperature: options.temperature || 0.2,
-      });
-      return res.choices[0]?.message?.content || "No response generated.";
-    }
-
-    throw new Error("[KeyPool] All Gemini, Groq, and Azure OpenAI keys exhausted or failed.");
+    throw new Error("[KeyPool] All Gemini and Groq accounts in pool are currently exhausted or unavailable.");
   }
 
   // Streaming chat completion with fallback
@@ -235,27 +181,6 @@ export class KeyPoolRotator {
       }
     }
 
-    // 3. Fallback to Azure OpenAI
-    if (this.azureConfig.apiKey && this.azureConfig.endpoint) {
-      const endpoint = this.azureConfig.endpoint.replace(/\/$/, "");
-      const azureClient = new OpenAI({
-        apiKey: this.azureConfig.apiKey,
-        baseURL: `${endpoint}/openai/deployments/${this.azureConfig.model}`,
-        defaultQuery: { "api-version": this.azureConfig.apiVersion },
-        defaultHeaders: { "api-key": this.azureConfig.apiKey },
-      });
-      const stream = await azureClient.chat.completions.create({
-        model: this.azureConfig.model,
-        messages: messages as any,
-        stream: true,
-      });
-      for await (const chunk of stream) {
-        const delta = chunk.choices[0]?.delta?.content || "";
-        if (delta) yield delta;
-      }
-      return;
-    }
-
-    throw new Error("[KeyPool] All streaming keys failed.");
+    throw new Error("[KeyPool] All Gemini and Groq streaming accounts in pool failed.");
   }
 }

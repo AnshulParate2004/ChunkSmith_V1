@@ -88,11 +88,6 @@ export class ChatAgent {
     this.keyPool = new KeyPoolRotator({
       geminiKeys: serverConfig.GEMINI_KEYS,
       groqKeys: serverConfig.GROQ_KEYS,
-      azureKey: serverConfig.AZURE_OPENAI_API_KEY,
-      azureEndpoint: serverConfig.AZURE_OPENAI_ENDPOINT,
-      azureModel: serverConfig.AZURE_OPENAI_CHAT_MODEL,
-      azureApiVersion: serverConfig.AZURE_OPENAI_API_VERSION,
-      openaiKey: serverConfig.OPENAI_API_KEY,
     });
   }
 

@@ -1,18 +1,4 @@
 export const serverConfig = {
-  // Model settings
-  AZURE_OPENAI_CHAT_MODEL: process.env.AZURE_OPENAI_CHAT_MODEL || "gpt-4o",
-  AZURE_OPENAI_EMBEDDING_MODEL: process.env.AZURE_OPENAI_EMBEDDING_MODEL || "text-embedding-3-large",
-  AZURE_OPENAI_API_KEY: process.env.AZURE_OPENAI_API_KEY || "",
-  AZURE_OPENAI_ENDPOINT: process.env.AZURE_OPENAI_ENDPOINT || "",
-  AZURE_OPENAI_API_VERSION: process.env.AZURE_OPENAI_API_VERSION || "2024-12-01-preview",
-
-  OPENAI_API_KEY: process.env.OPENAI_API_KEY || "",
-
-  // Portkey AI Gateway settings (multi-provider, failover, load balancing)
-  PORTKEY_API_KEY: process.env.PORTKEY_API_KEY || "",
-  PORTKEY_CONFIG_ID: process.env.PORTKEY_CONFIG_ID || "",
-  PORTKEY_VIRTUAL_KEY: process.env.PORTKEY_VIRTUAL_KEY || "",
-
   // Google Gemini Key Pool (supports single key or comma-separated list of 10+ keys)
   GOOGLE_API_KEY: process.env.GOOGLE_API_KEY || "",
   GOOGLE_EMBEDDING_MODEL: process.env.GOOGLE_EMBEDDING_MODEL || "text-embedding-004",
@@ -28,7 +14,7 @@ export const serverConfig = {
     .map((k) => k.trim())
     .filter(Boolean),
 
-  // Qdrant
+  // Qdrant Vector DB
   QDRANT_URL: process.env.QDRANT_URL || "",
   QDRANT_API_KEY: process.env.QDRANT_API_KEY || "",
 
