@@ -109,6 +109,9 @@ const ProcessingPage = () => {
     };
 
     checkBackendStatus();
+    const interval = setInterval(checkBackendStatus, 1500);
+
+    return () => clearInterval(interval);
   }, [documentId, queryProjectId, hasSavedData]);
 
   // Timer that stops when complete

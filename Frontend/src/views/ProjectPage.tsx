@@ -199,6 +199,18 @@ const ProjectPage = () => {
     try {
       const result = await apiService.uploadPDF(selectedFile, settings, projectId!);
 
+      if (result && result.document_id) {
+        localStorage.setItem(`processing_${result.document_id}`, JSON.stringify({
+          documentId: result.document_id,
+          result: {
+            chunks_processed: result.chunks_count || 0,
+            images_extracted: 0
+          },
+          processingTime: 3,
+          completedAt: new Date().toISOString()
+        }));
+      }
+
       toast({
         title: "File uploaded successfully!",
         description: `Processing document: ${selectedFile.name} (Language: ${settings.languages})`,
