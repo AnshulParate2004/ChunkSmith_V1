@@ -110,4 +110,23 @@ export class VectorStoreManager {
       metadata: result.payload || {},
     }));
   }
+
+  async deleteDocument(collectionName: string, documentId: string) {
+    try {
+      await this.client.delete(collectionName, {
+        filter: {
+          must: [
+            {
+              key: "document_id",
+              match: {
+                value: documentId,
+              },
+            },
+          ],
+        },
+      });
+    } catch (e: any) {
+      console.warn(`Vector store delete note (${collectionName}/${documentId}):`, e?.message);
+    }
+  }
 }

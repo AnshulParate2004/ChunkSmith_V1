@@ -67,8 +67,8 @@ export class DocumentParser {
 
       const json = await response.json();
       
-      // If elements are present in v2 output
-      if (json.elements && Array.isArray(json.elements)) {
+      // If elements are present in v2 output and non-empty
+      if (json.elements && Array.isArray(json.elements) && json.elements.length > 0) {
         return json.elements.map((elem: any) => ({
           type: elem.type || "NarrativeText",
           element_id: elem.element_id || crypto.randomUUID(),
@@ -77,19 +77,96 @@ export class DocumentParser {
         }));
       }
 
-      // If markdown is returned, extract chunks
-      if (json.markdown) {
-        const paragraphs = json.markdown.split(/\n\n+/).filter(Boolean);
-        return paragraphs.map((para: string, idx: number) => ({
-          type: "NarrativeText",
-          element_id: `${json.id || crypto.randomUUID()}_${idx}`,
-          text: para.trim(),
-          metadata: { filename, ...json.metadata },
-        }));
+      // If markdown is returned, extract structured semantic chunks
+      if (json.markdown && typeof json.markdown === "string" && json.markdown.trim()) {
+        return this.chunkMarkdown(json.markdown, filename, options, json);
       }
 
       return [];
     }
+
+  private chunkMarkdown(
+    markdown: string,
+    filename: string,
+    options: {
+      maxCharacters?: number;
+      newAfterNChars?: number;
+      combineTextUnderNChars?: number;
+    },
+    json: any
+  ): ParsedElement[] {
+    const maxCharacters = options.maxCharacters || 3000;
+    const combineTextUnderNChars = options.combineTextUnderNChars || 200;
+
+    // Split by markdown headers (#, ##, ###, ####)
+    const rawSections = markdown
+      .split(/(?=\n#{1,4}\s+)/)
+      .map((s) => s.trim())
+      .filter(Boolean);
+
+    const textChunks: string[] = [];
+    let currentBuffer = "";
+
+    for (const section of rawSections) {
+      if (section.length > maxCharacters) {
+        if (currentBuffer) {
+          textChunks.push(currentBuffer);
+          currentBuffer = "";
+        }
+        // Split oversized section by paragraphs
+        const paragraphs = section
+          .split(/\n\n+/)
+          .map((p) => p.trim())
+          .filter(Boolean);
+
+        let subBuffer = "";
+        for (const p of paragraphs) {
+          if (subBuffer.length + p.length + 2 <= maxCharacters) {
+            subBuffer = subBuffer ? `${subBuffer}\n\n${p}` : p;
+          } else {
+            if (subBuffer) textChunks.push(subBuffer);
+            subBuffer = p;
+          }
+        }
+        if (subBuffer) textChunks.push(subBuffer);
+      } else {
+        if (currentBuffer.length + section.length + 2 <= maxCharacters) {
+          currentBuffer = currentBuffer ? `${currentBuffer}\n\n${section}` : section;
+          if (currentBuffer.length >= combineTextUnderNChars) {
+            textChunks.push(currentBuffer);
+            currentBuffer = "";
+          }
+        } else {
+          if (currentBuffer) textChunks.push(currentBuffer);
+          currentBuffer = section;
+        }
+      }
+    }
+    if (currentBuffer) textChunks.push(currentBuffer);
+
+    return textChunks.map((chunk, idx) => {
+      let type = "NarrativeText";
+      if (chunk.includes("<table") || /\|.*\|[\r\n]+\|[-:| ]+\|/m.test(chunk)) {
+        type = "Table";
+      } else if (chunk.startsWith("#")) {
+        type = "Title";
+      } else if (chunk.includes("![")) {
+        type = "Image";
+      }
+
+      return {
+        type,
+        element_id: `${json?.id || crypto.randomUUID()}_${idx}`,
+        text: chunk,
+        metadata: {
+          filename,
+          page_count: json?.metadata?.page_count || 1,
+          section_index: idx,
+          ...(json?.metadata || {}),
+        },
+      };
+    });
+  }
 
     // Legacy V1 General API
     const form = new FormData();

@@ -34,6 +34,13 @@ export class StorageManager {
     return Buffer.from(arrayBuffer);
   }
 
+  async deleteFile(filePath: string, bucketName = serverConfig.SUPABASE_DATA_BUCKET_NAME) {
+    const { error } = await this.supabase.storage.from(bucketName).remove([filePath]);
+    if (error) {
+      console.warn(`Storage delete warning (${bucketName}/${filePath}):`, error.message);
+    }
+  }
+
   getPublicUrl(filePath: string, bucketName = serverConfig.SUPABASE_BUCKET_NAME): string {
     const { data } = this.supabase.storage.from(bucketName).getPublicUrl(filePath);
     return data.publicUrl;
