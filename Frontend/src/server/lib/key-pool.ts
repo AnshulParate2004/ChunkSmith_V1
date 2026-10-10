@@ -141,13 +141,62 @@ export class KeyPoolRotator {
     throw new Error("[KeyPool] All Gemini and Groq key pools and model fallbacks exhausted.");
   }
 
-  // Streaming chat completion with 2D fallback (keys + models)
+  // Streaming chat completion with 2D fallback (keys + models) and multimodal vision support
   async *streamChat(
-    messages: Array<{ role: string; content: string }>
+    messages: Array<{ role: string; content: string }>,
+    options?: {
+      images?: Array<{ mimeType: string; data: string }>;
+    }
   ): AsyncGenerator<string, void, unknown> {
     const prompt = messages.map((m) => `${m.role.toUpperCase()}: ${m.content}`).join("\n\n");
+    const hasImages = !!(options?.images && options.images.length > 0);
 
-    // 1. Try Groq streaming across models and keys
+    // Multimodal parts for Gemini
+    const geminiParts: any[] = [];
+    if (hasImages && options?.images) {
+      for (const img of options.images) {
+        geminiParts.push({
+          inlineData: {
+            mimeType: img.mimeType || "image/png",
+            data: img.data,
+          },
+        });
+      }
+    }
+    geminiParts.push({ text: prompt });
+
+    // If images are provided, prioritize Gemini vision models first
+    if (hasImages) {
+      for (const model of this.geminiModels) {
+        if (this.geminiKeys.length === 0) break;
+        const startGemini = this.geminiIndex;
+        let geminiAttempts = 0;
+
+        while (geminiAttempts < this.geminiKeys.length) {
+          const keyIndex = (startGemini + geminiAttempts) % this.geminiKeys.length;
+          const key = this.geminiKeys[keyIndex];
+
+          try {
+            const ai = new GoogleGenAI({ apiKey: key });
+            const responseStream = await ai.models.generateContentStream({
+              model,
+              contents: [{ role: "user", parts: geminiParts }],
+            });
+
+            this.geminiIndex = (keyIndex + 1) % this.geminiKeys.length;
+            for await (const chunk of responseStream) {
+              if (chunk.text) yield chunk.text;
+            }
+            return;
+          } catch (err: any) {
+            console.warn(`[KeyPool] Gemini vision stream key #${keyIndex + 1} on model '${model}' failed: ${err?.message}. Rotating...`);
+            geminiAttempts++;
+          }
+        }
+      }
+    }
+
+    // 1. Try Groq streaming across models and keys (text-only)
     for (const model of this.groqModels) {
       if (this.groqKeys.length === 0) break;
 
@@ -180,7 +229,7 @@ export class KeyPoolRotator {
       }
     }
 
-    // 2. Try Gemini streaming across models and keys
+    // 2. Try Gemini streaming across models and keys (standard text/fallback)
     for (const model of this.geminiModels) {
       if (this.geminiKeys.length === 0) break;
 

@@ -4,7 +4,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card } from '@/components/ui/card';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { ArrowLeft, Send, Loader2, SlidersHorizontal } from 'lucide-react';
+import { ArrowLeft, Send, Loader2, SlidersHorizontal, Image as ImageIcon, Eye, FileText, Ban } from 'lucide-react';
 import { apiService, API_BASE_URL } from '@/services/api';
 import { toast } from 'sonner';
 import { StreamingSteps, StreamingStep } from '@/components/Chat/StreamingSteps';
@@ -52,6 +52,7 @@ const ChatPage = () => {
   const [isStreaming, setIsStreaming] = useState(false);
   const [streamingSteps, setStreamingSteps] = useState<StreamingStep[]>([]);
   const [scoreThreshold, setScoreThreshold] = useState<number>(0.60);
+  const [imageSelectionMode, setImageSelectionMode] = useState<'summary' | 'vision' | 'always' | 'off'>('summary');
 
   // When we create a brand-new conversation and immediately stream,
   // we don't want the initial auto history load to overwrite the
@@ -270,7 +271,7 @@ const ChatPage = () => {
     const encodedMessage = encodeURIComponent(message);
     const encodedToken = encodeURIComponent(session.access_token);
 
-    const url = `${API_BASE_URL}/chat/conversations/${targetConversationId}/message_stream?message=${encodedMessage}&token=${encodedToken}&scoreThreshold=${scoreThreshold}`;
+    const url = `${API_BASE_URL}/chat/conversations/${targetConversationId}/message_stream?message=${encodedMessage}&token=${encodedToken}&scoreThreshold=${scoreThreshold}&imageSelectionMode=${imageSelectionMode}`;
 
     const eventSource = new EventSource(url);
     eventSourceRef.current = eventSource;
@@ -550,7 +551,8 @@ const ChatPage = () => {
                 </span>
               </Button>
             </PopoverTrigger>
-            <PopoverContent className="w-80 p-4 space-y-4" align="end">
+            <PopoverContent className="w-88 p-4 space-y-4" align="end">
+              {/* Relevance Threshold Section */}
               <div className="space-y-1">
                 <div className="flex items-center justify-between">
                   <h4 className="text-sm font-semibold text-foreground">
@@ -561,7 +563,7 @@ const ChatPage = () => {
                   </span>
                 </div>
                 <p className="text-xs text-muted-foreground leading-relaxed">
-                  Only document chunks with vector similarity at or above this threshold will be retrieved and analyzed.
+                  Only document chunks with vector similarity at or above this threshold will be retrieved.
                 </p>
               </div>
 
@@ -581,7 +583,7 @@ const ChatPage = () => {
                 </div>
               </div>
 
-              <div className="flex items-center gap-1.5 pt-2 border-t">
+              <div className="flex items-center gap-1.5 pt-1">
                 <Button
                   variant="ghost"
                   size="sm"
@@ -606,6 +608,64 @@ const ChatPage = () => {
                 >
                   Strict (75%)
                 </Button>
+              </div>
+
+              {/* Figure Verification Mode Section */}
+              <div className="pt-3 border-t space-y-2">
+                <div className="flex items-center justify-between">
+                  <h4 className="text-sm font-semibold text-foreground flex items-center gap-1.5">
+                    <ImageIcon className="w-4 h-4 text-primary" />
+                    <span>Figure Verification</span>
+                  </h4>
+                  <span className="text-[11px] text-muted-foreground capitalize font-medium">
+                    {imageSelectionMode === 'summary' && 'AI Summary'}
+                    {imageSelectionMode === 'vision' && 'AI Vision'}
+                    {imageSelectionMode === 'always' && 'Always Show'}
+                    {imageSelectionMode === 'off' && 'Off'}
+                  </span>
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  Choose how figures and diagrams from retrieved documents are decided and displayed.
+                </p>
+
+                <div className="grid grid-cols-2 gap-1.5 pt-1">
+                  <Button
+                    variant={imageSelectionMode === 'summary' ? 'default' : 'outline'}
+                    size="sm"
+                    className="h-8 text-[11px] justify-start gap-1.5 px-2"
+                    onClick={() => setImageSelectionMode('summary')}
+                  >
+                    <FileText className="w-3.5 h-3.5" />
+                    <span>AI Summary</span>
+                  </Button>
+                  <Button
+                    variant={imageSelectionMode === 'vision' ? 'default' : 'outline'}
+                    size="sm"
+                    className="h-8 text-[11px] justify-start gap-1.5 px-2"
+                    onClick={() => setImageSelectionMode('vision')}
+                  >
+                    <Eye className="w-3.5 h-3.5" />
+                    <span>AI Vision</span>
+                  </Button>
+                  <Button
+                    variant={imageSelectionMode === 'always' ? 'default' : 'outline'}
+                    size="sm"
+                    className="h-8 text-[11px] justify-start gap-1.5 px-2"
+                    onClick={() => setImageSelectionMode('always')}
+                  >
+                    <ImageIcon className="w-3.5 h-3.5" />
+                    <span>Always Show</span>
+                  </Button>
+                  <Button
+                    variant={imageSelectionMode === 'off' ? 'default' : 'outline'}
+                    size="sm"
+                    className="h-8 text-[11px] justify-start gap-1.5 px-2"
+                    onClick={() => setImageSelectionMode('off')}
+                  >
+                    <Ban className="w-3.5 h-3.5" />
+                    <span>Hide Images</span>
+                  </Button>
+                </div>
               </div>
             </PopoverContent>
           </Popover>

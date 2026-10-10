@@ -64,6 +64,8 @@ export async function GET(
       ? parseFloat(scoreThresholdParam)
       : 0.60;
 
+  const imageSelectionMode = (url.searchParams.get("imageSelectionMode") || "summary").toLowerCase();
+
   if (!message) {
     return new Response(JSON.stringify({ detail: "message query param is required" }), {
       status: 400,
@@ -72,6 +74,50 @@ export async function GET(
   }
 
   const supabase = getSupabaseAdmin();
+
+  async function getCandidateImagesBase64(
+    projId: string,
+    candidates: Array<{ filename: string }>
+  ): Promise<Array<{ mimeType: string; data: string }>> {
+    const results: Array<{ mimeType: string; data: string }> = [];
+    const candidateBuckets = [
+      serverConfig.SUPABASE_BUCKET_NAME || "chunk_images",
+      serverConfig.SUPABASE_DATA_BUCKET_NAME || "chunk_data",
+    ];
+
+    for (const c of candidates.slice(0, 2)) {
+      const cleanFilename = decodeURIComponent(c.filename).split("?")[0];
+      const candidatePaths = [
+        `${projId}/images/${cleanFilename}`,
+        `images/${cleanFilename}`,
+        `${projId}/${cleanFilename}`,
+        cleanFilename,
+      ];
+      let mimeType = "image/png";
+      if (cleanFilename.toLowerCase().endsWith(".jpg") || cleanFilename.toLowerCase().endsWith(".jpeg")) {
+        mimeType = "image/jpeg";
+      } else if (cleanFilename.toLowerCase().endsWith(".webp")) {
+        mimeType = "image/webp";
+      }
+
+      for (const bucket of candidateBuckets) {
+        let found = false;
+        for (const p of candidatePaths) {
+          try {
+            const { data, error } = await supabase.storage.from(bucket).download(p);
+            if (data && !error) {
+              const buf = Buffer.from(await data.arrayBuffer());
+              results.push({ mimeType, data: buf.toString("base64") });
+              found = true;
+              break;
+            }
+          } catch {}
+        }
+        if (found) break;
+      }
+    }
+    return results;
+  }
 
   // Find conversation to get project_id
   let projectId = url.searchParams.get("projectId") || "";
@@ -283,19 +329,30 @@ Be concise, clear, and professional.`;
               })
               .join("\n\n---\n\n");
 
-            systemPrompt = `You are ChunkSmith AI, an intelligent multimodal document analysis assistant.
-Answer the user's question accurately, concisely, and factually based on the document context below.
+            let figurePromptInstructions = "";
+            if (imageSelectionMode === "vision") {
+              figurePromptInstructions = `
+
+MULTIMODAL FIGURE VISION VERIFICATION INSTRUCTIONS:
+- The actual visual images of candidate document figures have been provided directly to your vision system.
+- Carefully inspect each diagram with your vision capabilities and determine if it genuinely illustrates the user's question.
+- At the end of your response, on a new line, output:
+  If one or more figures directly illustrate the answer: [DISPLAY_IMAGES: filename1.png, filename2.png]
+  If no figures are relevant: [DISPLAY_IMAGES: none]`;
+            } else if (imageSelectionMode === "summary") {
+              figurePromptInstructions = `
 
 MULTIMODAL FIGURE SELECTION INSTRUCTIONS:
 - Candidate figures associated with the retrieved sources are listed with their Figure IDs and descriptions.
-- Carefully evaluate whether any candidate figure is genuinely helpful, informative, and directly relevant to illustrating the answer to the user's question (e.g., biological diagrams, chemical reaction setups, engineering architecture, charts, anatomy).
+- Carefully evaluate whether any candidate figure is genuinely helpful, informative, and directly relevant to illustrating the answer to the user's question.
 - Never select decorative images, logos, headers, or figures that are not directly relevant to what was asked.
-- At the very end of your response, on a new line, output an explicit image selection tag:
-  If one or more figures are directly relevant:
-  [DISPLAY_IMAGES: filename1.png, filename2.png]
-  (Specify only exact Figure ID filenames, maximum 2).
-  If no figures are directly relevant or needed:
-  [DISPLAY_IMAGES: none]
+- At the end of your response, on a new line, output:
+  If one or more figures are directly relevant: [DISPLAY_IMAGES: filename1.png, filename2.png]
+  If no figures are directly relevant or needed: [DISPLAY_IMAGES: none]`;
+            }
+
+            systemPrompt = `You are ChunkSmith AI, an intelligent multimodal document analysis assistant.
+Answer the user's question accurately, concisely, and factually based on the document context below.${figurePromptInstructions}
 
 Document Context:
 ${context}`;
@@ -335,10 +392,20 @@ Let the user know that you are ready to answer questions about their uploaded pr
           groqModels: serverConfig.GROQ_MODELS,
         });
 
+        // Load candidate image bytes if vision mode is active
+        let visionImages: Array<{ mimeType: string; data: string }> = [];
+        if (imageSelectionMode === "vision" && candidateImages.length > 0) {
+          try {
+            visionImages = await getCandidateImagesBase64(projectId, candidateImages);
+          } catch (vErr) {
+            console.warn("Failed to load candidate images for vision:", vErr);
+          }
+        }
+
         let fullAnswer = "";
         let streamBuffer = "";
 
-        for await (const chunk of keyPool.streamChat(messages)) {
+        for await (const chunk of keyPool.streamChat(messages, { images: visionImages })) {
           fullAnswer += chunk;
           streamBuffer += chunk;
 
@@ -379,30 +446,40 @@ Let the user know that you are ready to answer questions about their uploaded pr
         // Clean answer for saving & final display
         const cleanedAnswer = fullAnswer.replace(/\[DISPLAY_IMAGES:\s*[^\]]+\]/gi, "").trim();
 
-        // Parse approved figures
+        // Resolve approved figures based on imageSelectionMode
         const approvedImages: Array<{ filename: string; data: string }> = [];
-        const tagMatch = fullAnswer.match(/\[DISPLAY_IMAGES:\s*([^\]]+)\]/i);
 
-        if (tagMatch && tagMatch[1]) {
-          const tagVal = tagMatch[1].trim();
-          if (!tagVal.toLowerCase().includes("none")) {
-            const requestedFiles = tagVal
-              .split(",")
-              .map((f) => f.trim().toLowerCase())
-              .filter(Boolean);
+        if (imageSelectionMode === "off") {
+          // Off: never show figures
+        } else if (imageSelectionMode === "always") {
+          // Always: show candidate figures directly
+          candidateImages.slice(0, 2).forEach((ci) => {
+            approvedImages.push({ filename: ci.filename, data: ci.data });
+          });
+        } else {
+          // "summary" or "vision": LLM decides
+          const tagMatch = fullAnswer.match(/\[DISPLAY_IMAGES:\s*([^\]]+)\]/i);
+          if (tagMatch && tagMatch[1]) {
+            const tagVal = tagMatch[1].trim();
+            if (!tagVal.toLowerCase().includes("none")) {
+              const requestedFiles = tagVal
+                .split(",")
+                .map((f) => f.trim().toLowerCase())
+                .filter(Boolean);
 
-            for (const req of requestedFiles) {
-              const found = candidateImages.find(
-                (ci) =>
-                  ci.filename.toLowerCase() === req ||
-                  ci.filename.toLowerCase().includes(req) ||
-                  req.includes(ci.filename.toLowerCase())
-              );
-              if (found && !approvedImages.some((ai) => ai.filename === found.filename)) {
-                approvedImages.push({
-                  filename: found.filename,
-                  data: found.data,
-                });
+              for (const req of requestedFiles) {
+                const found = candidateImages.find(
+                  (ci) =>
+                    ci.filename.toLowerCase() === req ||
+                    ci.filename.toLowerCase().includes(req) ||
+                    req.includes(ci.filename.toLowerCase())
+                );
+                if (found && !approvedImages.some((ai) => ai.filename === found.filename)) {
+                  approvedImages.push({
+                    filename: found.filename,
+                    data: found.data,
+                  });
+                }
               }
             }
           }
