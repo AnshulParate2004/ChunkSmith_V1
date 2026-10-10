@@ -29,6 +29,42 @@ export async function GET(
 
       const supabase = getSupabaseAdmin();
 
+      // Immediate check if document is already processed!
+      try {
+        const { data: doc } = await supabase
+          .from("documents")
+          .select("*")
+          .eq("id", documentId)
+          .single();
+
+        if (doc && doc.status === "completed") {
+          sendEvent("progress", {
+            step: 4,
+            step_name: "Vectorize",
+            progress: 100,
+            message: "Document processing complete!",
+            document_id: documentId,
+            chunks_processed: doc.chunk_count || 0,
+            images_extracted: doc.image_count || 0,
+          });
+
+          sendEvent("complete", {
+            document_id: documentId,
+            chunks_processed: doc.chunk_count || 0,
+            images_extracted: doc.image_count || 0,
+            result: {
+              document_id: documentId,
+              chunks_processed: doc.chunk_count || 0,
+              images_extracted: doc.image_count || 0,
+              json_path: doc.json_path || "",
+              vector_store_path: "qdrant",
+              pickle_path: "",
+            },
+          });
+          return;
+        }
+      } catch {}
+
       // Check document status loop (up to 15 seconds)
       let attempts = 0;
       const maxAttempts = 15;

@@ -68,6 +68,9 @@ export const useSSE = (documentId: string | null) => {
             };
 
             setMessages((prev) => [...prev, message]);
+            if (message.type === 'complete') {
+              try { eventSource.close(); } catch {}
+            }
           } catch (err) {
             console.error('Failed to parse SSE message:', err);
           }
