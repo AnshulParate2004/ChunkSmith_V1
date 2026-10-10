@@ -1,14 +1,16 @@
 export const serverConfig = {
-  // Google Gemini Key Pool (supports single key or comma-separated list of 10+ keys)
+  // Google Gemini Configuration & Key Pool
   GOOGLE_API_KEY: process.env.GOOGLE_API_KEY || "",
-  GOOGLE_EMBEDDING_MODEL: process.env.GOOGLE_EMBEDDING_MODEL || "text-embedding-004",
+  GEMINI_MODEL: process.env.GEMINI_MODEL || "gemini-1.5-flash",
+  GEMINI_EMBEDDING_MODEL: process.env.GEMINI_EMBEDDING_MODEL || process.env.GOOGLE_EMBEDDING_MODEL || "text-embedding-004",
   GEMINI_KEYS: (process.env.GEMINI_KEYS || process.env.GOOGLE_API_KEY || "")
     .split(",")
     .map((k) => k.trim())
     .filter(Boolean),
 
-  // Groq Key Pool (supports comma-separated list of 10+ keys)
+  // Groq Configuration & Key Pool
   GROQ_API_KEY: process.env.GROQ_API_KEY || "",
+  GROQ_MODEL: process.env.GROQ_MODEL || "llama-3.3-70b-versatile",
   GROQ_KEYS: (process.env.GROQ_KEYS || process.env.GROQ_API_KEY || "")
     .split(",")
     .map((k) => k.trim())

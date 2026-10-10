@@ -16,6 +16,7 @@ export class VectorStoreManager {
     this.keyPool = new KeyPoolRotator({
       geminiKeys: serverConfig.GEMINI_KEYS,
       groqKeys: serverConfig.GROQ_KEYS,
+      geminiEmbeddingModel: serverConfig.GEMINI_EMBEDDING_MODEL,
     });
   }
 

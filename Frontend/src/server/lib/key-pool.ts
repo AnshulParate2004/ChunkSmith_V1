@@ -4,25 +4,35 @@ import Groq from "groq-sdk";
 export interface KeyPoolConfig {
   geminiKeys: string[];
   groqKeys: string[];
+  geminiModel?: string;
+  geminiEmbeddingModel?: string;
+  groqModel?: string;
 }
 
 export class KeyPoolRotator {
   private geminiKeys: string[] = [];
   private groqKeys: string[] = [];
+  private geminiModel: string;
+  private geminiEmbeddingModel: string;
+  private groqModel: string;
   private geminiIndex = 0;
   private groqIndex = 0;
 
   constructor(config: KeyPoolConfig) {
     this.geminiKeys = config.geminiKeys.filter((k) => k && k.trim().length > 0);
     this.groqKeys = config.groqKeys.filter((k) => k && k.trim().length > 0);
+    this.geminiModel = config.geminiModel || "gemini-1.5-flash";
+    this.geminiEmbeddingModel = config.geminiEmbeddingModel || "text-embedding-004";
+    this.groqModel = config.groqModel || "llama-3.3-70b-versatile";
   }
 
   // Round-robin with retry across all Gemini keys for vector embeddings
-  async getEmbedding(text: string): Promise<number[]> {
+  async getEmbedding(text: string, customModel?: string): Promise<number[]> {
     if (this.geminiKeys.length === 0) {
       throw new Error("[KeyPool] No Gemini API keys configured for embeddings.");
     }
 
+    const modelToUse = customModel || this.geminiEmbeddingModel;
     const startIndex = this.geminiIndex;
     let attempts = 0;
 
@@ -33,7 +43,7 @@ export class KeyPoolRotator {
       try {
         const ai = new GoogleGenAI({ apiKey: key });
         const res = await ai.models.embedContent({
-          model: "text-embedding-004",
+          model: modelToUse,
           contents: text,
         });
 
@@ -43,7 +53,7 @@ export class KeyPoolRotator {
           return res.embedding.values;
         }
       } catch (err: any) {
-        console.warn(`[KeyPool] Gemini key #${keyIndex + 1} failed or rate limited (${err?.message}). Trying next key...`);
+        console.warn(`[KeyPool] Gemini key #${keyIndex + 1} (${modelToUse}) failed or rate limited (${err?.message}). Trying next key...`);
         attempts++;
       }
     }
@@ -51,11 +61,19 @@ export class KeyPoolRotator {
     throw new Error("[KeyPool] All Gemini embedding keys exhausted or failed.");
   }
 
-  // Chat completion with fallback: Gemini pool <-> Groq pool
+  // Chat completion with fallback: Gemini pool <-> Groq pool with configurable models
   async chatCompletion(
     messages: Array<{ role: string; content: string }>,
-    options: { temperature?: number; maxTokens?: number } = {}
+    options: {
+      temperature?: number;
+      maxTokens?: number;
+      geminiModel?: string;
+      groqModel?: string;
+    } = {}
   ): Promise<string> {
+    const selectedGeminiModel = options.geminiModel || this.geminiModel;
+    const selectedGroqModel = options.groqModel || this.groqModel;
+
     // 1. Try Gemini Keys Pool
     if (this.geminiKeys.length > 0) {
       const startIndex = this.geminiIndex;
@@ -69,7 +87,7 @@ export class KeyPoolRotator {
           const ai = new GoogleGenAI({ apiKey: key });
           const prompt = messages.map((m) => `${m.role.toUpperCase()}: ${m.content}`).join("\n\n");
           const response = await ai.models.generateContent({
-            model: "gemini-1.5-flash",
+            model: selectedGeminiModel,
             contents: prompt,
           });
 
@@ -78,13 +96,13 @@ export class KeyPoolRotator {
             return response.text;
           }
         } catch (err: any) {
-          console.warn(`[KeyPool] Gemini chat key #${keyIndex + 1} hit error/rate limit: ${err?.message}. Rotating...`);
+          console.warn(`[KeyPool] Gemini chat key #${keyIndex + 1} (${selectedGeminiModel}) hit error/rate limit: ${err?.message}. Rotating...`);
           attempts++;
         }
       }
     }
 
-    // 2. Try Groq Keys Pool (Ultra fast Llama 3.3 70B)
+    // 2. Try Groq Keys Pool
     if (this.groqKeys.length > 0) {
       const startGroq = this.groqIndex;
       let groqAttempts = 0;
@@ -96,7 +114,7 @@ export class KeyPoolRotator {
         try {
           const groq = new Groq({ apiKey: key });
           const completion = await groq.chat.completions.create({
-            model: "llama-3.3-70b-versatile",
+            model: selectedGroqModel,
             messages: messages as any,
             temperature: options.temperature || 0.2,
             max_tokens: options.maxTokens || 2048,
@@ -108,7 +126,7 @@ export class KeyPoolRotator {
             return content;
           }
         } catch (err: any) {
-          console.warn(`[KeyPool] Groq key #${keyIndex + 1} hit error/rate limit: ${err?.message}. Rotating...`);
+          console.warn(`[KeyPool] Groq key #${keyIndex + 1} (${selectedGroqModel}) hit error/rate limit: ${err?.message}. Rotating...`);
           groqAttempts++;
         }
       }
@@ -117,11 +135,15 @@ export class KeyPoolRotator {
     throw new Error("[KeyPool] All Gemini and Groq accounts in pool are currently exhausted or unavailable.");
   }
 
-  // Streaming chat completion with fallback
+  // Streaming chat completion with configurable models
   async *streamChat(
-    messages: Array<{ role: string; content: string }>
+    messages: Array<{ role: string; content: string }>,
+    options: { geminiModel?: string; groqModel?: string } = {}
   ): AsyncGenerator<string, void, unknown> {
-    // 1. Try Groq Keys for streaming (instant TTFT ~150ms)
+    const selectedGroqModel = options.groqModel || this.groqModel;
+    const selectedGeminiModel = options.geminiModel || this.geminiModel;
+
+    // 1. Try Groq Keys for streaming
     if (this.groqKeys.length > 0) {
       const startGroq = this.groqIndex;
       let groqAttempts = 0;
@@ -133,7 +155,7 @@ export class KeyPoolRotator {
         try {
           const groq = new Groq({ apiKey: key });
           const stream = await groq.chat.completions.create({
-            model: "llama-3.3-70b-versatile",
+            model: selectedGroqModel,
             messages: messages as any,
             stream: true,
             temperature: 0.2,
@@ -146,7 +168,7 @@ export class KeyPoolRotator {
           }
           return;
         } catch (err: any) {
-          console.warn(`[KeyPool] Groq stream key #${keyIndex + 1} failed: ${err?.message}. Rotating...`);
+          console.warn(`[KeyPool] Groq stream key #${keyIndex + 1} (${selectedGroqModel}) failed: ${err?.message}. Rotating...`);
           groqAttempts++;
         }
       }
@@ -165,7 +187,7 @@ export class KeyPoolRotator {
           const ai = new GoogleGenAI({ apiKey: key });
           const prompt = messages.map((m) => `${m.role.toUpperCase()}: ${m.content}`).join("\n\n");
           const responseStream = await ai.models.generateContentStream({
-            model: "gemini-1.5-flash",
+            model: selectedGeminiModel,
             contents: prompt,
           });
 
@@ -175,7 +197,7 @@ export class KeyPoolRotator {
           }
           return;
         } catch (err: any) {
-          console.warn(`[KeyPool] Gemini stream key #${keyIndex + 1} failed: ${err?.message}. Rotating...`);
+          console.warn(`[KeyPool] Gemini stream key #${keyIndex + 1} (${selectedGeminiModel}) failed: ${err?.message}. Rotating...`);
           geminiAttempts++;
         }
       }
