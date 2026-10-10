@@ -62,13 +62,6 @@ export class VectorStoreManager {
         page_content: doc.pageContent,
       };
 
-      for (const key of Object.keys(sanitizedMetadata)) {
-        const val = sanitizedMetadata[key];
-        if (typeof val === "object" && val !== null) {
-          sanitizedMetadata[key] = JSON.stringify(val);
-        }
-      }
-
       points.push({
         id: pointId,
         vector,
@@ -89,16 +82,31 @@ export class VectorStoreManager {
 
   async search(collectionName: string, query: string, limit = 5) {
     const vector = await this.getEmbedding(query);
-    const searchResults = await this.client.search(collectionName, {
-      vector,
-      limit,
-      with_payload: true,
-    });
+    let points: any[] = [];
 
-    return searchResults.map((result) => ({
+    if (typeof (this.client as any).query === "function") {
+      const res = await (this.client as any).query(collectionName, {
+        query: vector,
+        limit,
+        with_payload: true,
+      });
+      points = res?.points || [];
+    } else if (typeof (this.client as any).search === "function") {
+      const res = await (this.client as any).search(collectionName, {
+        vector,
+        limit,
+        with_payload: true,
+      });
+      points = Array.isArray(res) ? res : res?.result || [];
+    }
+
+    return points.map((result: any) => ({
       id: result.id,
       score: result.score,
-      page_content: (result.payload?.page_content as string) || "",
+      page_content:
+        (result.payload?.page_content as string) ||
+        (result.payload?.enhanced_content as string) ||
+        "",
       metadata: result.payload || {},
     }));
   }

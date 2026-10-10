@@ -36,7 +36,8 @@ export class KeyPoolRotator {
       throw new Error("[KeyPool] No Gemini API keys configured for embeddings.");
     }
 
-    const modelToUse = customModel || this.geminiEmbeddingModel;
+    const rawModel = customModel || this.geminiEmbeddingModel || "gemini-embedding-001";
+    const modelToUse = rawModel === "text-embedding-004" ? "gemini-embedding-001" : rawModel;
     const startIndex = this.geminiIndex;
     let attempts = 0;
 
@@ -49,11 +50,13 @@ export class KeyPoolRotator {
         const res = await ai.models.embedContent({
           model: modelToUse,
           contents: text,
+          config: { outputDimensionality: 768 },
         });
 
-        if (res.embedding?.values) {
+        const values = res.embeddings?.[0]?.values || (res as any).embedding?.values;
+        if (values && values.length > 0) {
           this.geminiIndex = (keyIndex + 1) % this.geminiKeys.length;
-          return res.embedding.values;
+          return values;
         }
       } catch (err: any) {
         console.warn(`[KeyPool] Gemini embedding key #${keyIndex + 1} (${modelToUse}) failed/limited: ${err?.message}. Rotating...`);
