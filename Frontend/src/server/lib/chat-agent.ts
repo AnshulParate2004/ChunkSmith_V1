@@ -6,14 +6,18 @@ import { serverConfig } from "../config";
 export class ConversationManager {
   private supabase = getSupabaseAdmin();
 
-  async listConversations(projectId: string, userId: string) {
-    const { data, error } = await this.supabase
+  async listConversations(projectId: string, userId?: string) {
+    let query = this.supabase
       .from("conversations")
       .select("id, title, created_at, updated_at")
       .eq("project_id", projectId)
-      .eq("user_id", userId)
       .order("updated_at", { ascending: false });
 
+    if (userId) {
+      query = query.eq("user_id", userId);
+    }
+
+    const { data, error } = await query;
     if (error || !data) return [];
     return data;
   }

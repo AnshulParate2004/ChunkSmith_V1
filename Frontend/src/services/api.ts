@@ -421,10 +421,8 @@ class ApiService {
     const headers: HeadersInit = {};
     if (token) headers['Authorization'] = `Bearer ${token}`;
 
-    const url = new URL(`${API_BASE_URL}/chat/conversations`);
-    if (projectId) url.searchParams.append('project_id', projectId);
-
-    const response = await fetch(url.toString(), { headers });
+    const query = projectId ? `?project_id=${encodeURIComponent(projectId)}` : '';
+    const response = await fetch(`${API_BASE_URL}/chat/conversations${query}`, { headers });
     if (!response.ok) throw new Error('Failed to list conversations');
     const data = await response.json();
     // Backend returns a plain list [], wrap it for callers.
