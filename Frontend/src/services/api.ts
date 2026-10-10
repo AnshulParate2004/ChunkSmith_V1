@@ -418,11 +418,13 @@ class ApiService {
   }
 
   async listConversations(projectId?: string, token?: string): Promise<{ conversations: any[] }> {
-    const headers: HeadersInit = {};
+    const headers: HeadersInit = {
+      'Cache-Control': 'no-cache, no-store',
+    };
     if (token) headers['Authorization'] = `Bearer ${token}`;
 
-    const query = projectId ? `?project_id=${encodeURIComponent(projectId)}` : '';
-    const response = await fetch(`${API_BASE_URL}/chat/conversations${query}`, { headers });
+    const query = projectId ? `?project_id=${encodeURIComponent(projectId)}&_t=${Date.now()}` : `?_t=${Date.now()}`;
+    const response = await fetch(`${API_BASE_URL}/chat/conversations${query}`, { headers, cache: 'no-store' });
     if (!response.ok) throw new Error('Failed to list conversations');
     const data = await response.json();
     // Backend returns a plain list [], wrap it for callers.
@@ -430,10 +432,15 @@ class ApiService {
   }
 
   async getConversationHistory(conversationId: string, token?: string): Promise<{ success: boolean; messages: any[] }> {
-    const headers: HeadersInit = {};
+    const headers: HeadersInit = {
+      'Cache-Control': 'no-cache, no-store',
+    };
     if (token) headers['Authorization'] = `Bearer ${token}`;
 
-    const response = await fetch(`${API_BASE_URL}/chat/conversations/${conversationId}/messages`, { headers });
+    const response = await fetch(`${API_BASE_URL}/chat/conversations/${conversationId}/messages?_t=${Date.now()}`, {
+      headers,
+      cache: 'no-store',
+    });
     if (!response.ok) throw new Error('Failed to get conversation history');
     return response.json();
   }

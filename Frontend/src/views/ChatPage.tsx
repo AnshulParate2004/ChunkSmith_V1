@@ -86,7 +86,7 @@ const ChatPage = () => {
         skipNextHistoryLoadRef.current = false;
         return;
       }
-      loadMessages(activeConversationId);
+      loadMessages(activeConversationId, true);
     }
   }, [activeConversationId, session?.access_token]);
 
@@ -145,7 +145,7 @@ const ChatPage = () => {
     }
   };
 
-  const loadMessages = async (conversationId: string) => {
+  const loadMessages = async (conversationId: string, isSwitching = false) => {
     if (!session?.access_token || !projectId) return;
     try {
       const response = await apiService.getConversationHistory(conversationId, session.access_token);
@@ -166,10 +166,18 @@ const ChatPage = () => {
           images,
         };
       });
-      // If there is no stored history yet (e.g. brand new conversation),
-      // avoid overwriting any in-flight streaming messages with an empty list.
-      if (mappedMessages.length > 0) {
+
+      if (isSwitching) {
         setMessages(mappedMessages);
+      } else if (mappedMessages.length > 0) {
+        setMessages(prev => {
+          // If in-memory state has more messages (e.g. streaming just completed and DB read was stale),
+          // preserve the current messages instead of rolling back.
+          if (prev.length > mappedMessages.length) {
+            return prev;
+          }
+          return mappedMessages;
+        });
       }
     } catch (error) {
       toast.error('Failed to load messages');

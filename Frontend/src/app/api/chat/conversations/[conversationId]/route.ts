@@ -2,6 +2,9 @@ import { NextResponse } from "next/server";
 import { getUserFromRequest, getSupabaseAdmin } from "@/server/lib/supabase";
 import { ConversationManager } from "@/server/lib/chat-agent";
 
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
+
 const convManager = new ConversationManager();
 
 export async function GET(

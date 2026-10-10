@@ -2,6 +2,9 @@ import { NextResponse } from "next/server";
 import { getUserFromRequest } from "@/server/lib/supabase";
 import { ConversationManager } from "@/server/lib/chat-agent";
 
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
+
 const convManager = new ConversationManager();
 
 export async function GET(request: Request) {
@@ -14,7 +17,11 @@ export async function GET(request: Request) {
     }
 
     const conversations = await convManager.listConversations(projectId, user?.id);
-    return NextResponse.json(conversations);
+    return NextResponse.json(conversations, {
+      headers: {
+        "Cache-Control": "no-store, no-cache, must-revalidate",
+      },
+    });
   } catch (error: any) {
     return NextResponse.json({ detail: error?.message || "Failed to list conversations" }, { status: 500 });
   }
