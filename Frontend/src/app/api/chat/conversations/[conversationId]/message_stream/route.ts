@@ -238,6 +238,43 @@ export async function GET(
           web_query: "",
         });
 
+        // Auto-generate a smart conversation title if it still has a default placeholder
+        if (
+          conversation &&
+          (!conversation.title ||
+            conversation.title === "New Chat" ||
+            /^Chat\s+\d/i.test(conversation.title) ||
+            conversation.title === "Conversation")
+        ) {
+          (async () => {
+            try {
+              const titlePrompt = `Generate a concise, professional title (3 to 5 words maximum, no quotes, no trailing punctuation) summarizing this question for a chat sidebar:
+User question: "${message}"
+Title:`;
+              const genTitle = await keyPool.chatCompletion(
+                [{ role: "user", content: titlePrompt }],
+                { maxTokens: 15, temperature: 0.2 }
+              );
+              const cleanT = genTitle
+                ?.trim()
+                .replace(/^["']|["']$/g, "")
+                .replace(/\.+$/, "")
+                .slice(0, 45);
+
+              if (cleanT && cleanT.length >= 2) {
+                await supabase
+                  .from("conversations")
+                  .update({ title: cleanT })
+                  .eq("id", conversationId);
+
+                send("conversation_title", { title: cleanT });
+              }
+            } catch (tErr) {
+              console.warn("Could not auto-generate chat title:", tErr);
+            }
+          })();
+        }
+
         let searchResults: any[] = [];
         interface CandidateImage {
           filename: string;

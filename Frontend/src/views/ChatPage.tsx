@@ -290,6 +290,18 @@ const ChatPage = () => {
         case 'connected':
           break;
 
+        case 'conversation_title': {
+          if (data.title) {
+            setTitleDraft(data.title);
+            setConversations((prev) =>
+              prev.map((c) =>
+                c.id === conversationIdForStream ? { ...c, title: data.title } : c
+              )
+            );
+          }
+          break;
+        }
+
         case 'planner_plan': {
           planStepId = 'plan-' + Date.now();
           const useRag = data.use_rag;
