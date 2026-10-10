@@ -18,9 +18,13 @@ export async function POST(request: Request) {
       return NextResponse.json({ detail: "Unauthorized" }, { status: 401 });
     }
 
+    const url = new URL(request.url);
     const formData = await request.formData();
     const file = formData.get("file") as File | null;
-    const projectId = formData.get("project_id") as string | null;
+    const rawProjectId =
+      (formData.get("project_id") as string | null) ||
+      url.searchParams.get("project_id");
+    const projectId = rawProjectId ? decodeURIComponent(rawProjectId) : null;
 
     if (!file || !projectId) {
       return NextResponse.json({ detail: "file and project_id are required" }, { status: 400 });
@@ -34,7 +38,7 @@ export async function POST(request: Request) {
     const supabase = getSupabaseAdmin();
 
     // 1. Insert record into Supabase PostgreSQL documents table
-    await supabase.from("documents").insert({
+    const { error: insertError } = await supabase.from("documents").insert({
       id: documentId,
       project_id: projectId,
       filename: file.name,
@@ -43,22 +47,38 @@ export async function POST(request: Request) {
       chunk_count: 0,
       image_count: 0,
     });
+    if (insertError) {
+      console.warn("Supabase document insert note:", insertError.message || insertError);
+    }
 
     // 2. Upload original PDF to Supabase Storage
     const pdfPath = `${projectId}/uploads/${documentId}.pdf`;
     await storage.uploadBuffer(buffer, pdfPath, "application/pdf", serverConfig.SUPABASE_PDF_BUCKET_NAME);
 
     // 3. Parse Document via Unstructured API
-    const maxCharacters = Number(formData.get("max_characters") || serverConfig.MAX_CHARACTERS);
-    const newAfterNChars = Number(formData.get("new_after_n_chars") || serverConfig.NEW_AFTER_N_CHARS);
-    const combineTextUnderNChars = Number(
-      formData.get("combine_text_under_n_chars") || serverConfig.COMBINE_TEXT_UNDER_N_CHARS
+    const maxCharacters = Number(
+      formData.get("max_characters") ||
+      url.searchParams.get("max_characters") ||
+      serverConfig.MAX_CHARACTERS
     );
+    const newAfterNChars = Number(
+      formData.get("new_after_n_chars") ||
+      url.searchParams.get("new_after_n_chars") ||
+      serverConfig.NEW_AFTER_N_CHARS
+    );
+    const combineTextUnderNChars = Number(
+      formData.get("combine_text_under_n_chars") ||
+      url.searchParams.get("combine_text_under_n_chars") ||
+      serverConfig.COMBINE_TEXT_UNDER_N_CHARS
+    );
+    const rawLanguages = (formData.get("languages") || url.searchParams.get("languages")) as string | null;
+    const languages = rawLanguages ? [rawLanguages] : ["english"];
 
     const elements = await parser.parseDocument(buffer, file.name, {
       maxCharacters,
       newAfterNChars,
       combineTextUnderNChars,
+      languages,
     });
 
     // 4. Transform to chunks
@@ -92,7 +112,7 @@ export async function POST(request: Request) {
     }
 
     // 7. Update status to completed
-    await supabase
+    const { error: updateError } = await supabase
       .from("documents")
       .update({
         status: "completed",
@@ -102,6 +122,9 @@ export async function POST(request: Request) {
         updated_at: new Date().toISOString(),
       })
       .eq("id", documentId);
+    if (updateError) {
+      console.warn("Supabase document update note:", updateError.message || updateError);
+    }
 
     return NextResponse.json({
       success: true,

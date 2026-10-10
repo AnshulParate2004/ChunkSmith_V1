@@ -178,6 +178,13 @@ class ApiService {
 
     const formData = new FormData();
     formData.append('file', file);
+    formData.append('project_id', projectId);
+    formData.append('max_characters', String(settings.maxCharacters));
+    formData.append('new_after_n_chars', String(settings.newAfterNChars));
+    formData.append('combine_text_under_n_chars', String(settings.combineTextUnderNChars));
+    formData.append('extract_images', String(settings.extractImages));
+    formData.append('extract_tables', String(settings.extractTables));
+    formData.append('languages', settings.languages || 'english');
 
     const url = `${API_BASE_URL}/process-pdf?${queryParams.toString()}`;
 
@@ -202,7 +209,13 @@ class ApiService {
     });
 
     if (!response.ok) {
-      throw new Error(`Upload failed: ${response.statusText}`);
+      const errorData = await response.json().catch(() => ({}));
+      const errorMsg =
+        errorData.detail ||
+        errorData.message ||
+        errorData.error ||
+        `Upload failed: ${response.statusText} (${response.status})`;
+      throw new Error(errorMsg);
     }
 
     const result = await response.json();
