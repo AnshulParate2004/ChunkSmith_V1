@@ -88,8 +88,8 @@ export class ChatAgent {
     this.keyPool = new KeyPoolRotator({
       geminiKeys: serverConfig.GEMINI_KEYS,
       groqKeys: serverConfig.GROQ_KEYS,
-      geminiModel: serverConfig.GEMINI_MODEL,
-      groqModel: serverConfig.GROQ_MODEL,
+      geminiModels: serverConfig.GEMINI_MODELS,
+      groqModels: serverConfig.GROQ_MODELS,
     });
   }
 
