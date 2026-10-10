@@ -1,8 +1,7 @@
 import { getSupabaseAdmin } from "./supabase";
 import { VectorStoreManager } from "./vector-store";
+import { KeyPoolRotator } from "./key-pool";
 import { serverConfig } from "../config";
-import OpenAI from "openai";
-import { Portkey } from "portkey-ai";
 
 export class ConversationManager {
   private supabase = getSupabaseAdmin();
@@ -82,44 +81,19 @@ export class ConversationManager {
 export class ChatAgent {
   private projectId: string;
   private vectorManager = new VectorStoreManager();
+  private keyPool: KeyPoolRotator;
 
   constructor(projectId: string) {
     this.projectId = projectId;
-  }
-
-  private getClient(): { client: any; modelName: string } {
-    // 1. Portkey Gateway (Multi-API key, load balancing & failover)
-    if (serverConfig.PORTKEY_API_KEY) {
-      const portkeyOptions: any = {
-        apiKey: serverConfig.PORTKEY_API_KEY,
-      };
-      if (serverConfig.PORTKEY_CONFIG_ID) {
-        portkeyOptions.config = serverConfig.PORTKEY_CONFIG_ID;
-      }
-      if (serverConfig.PORTKEY_VIRTUAL_KEY) {
-        portkeyOptions.virtualKey = serverConfig.PORTKEY_VIRTUAL_KEY;
-      }
-      const portkey = new Portkey(portkeyOptions);
-      return { client: portkey, modelName: serverConfig.AZURE_OPENAI_CHAT_MODEL || "gpt-4o" };
-    }
-
-    // 2. Azure OpenAI
-    if (serverConfig.AZURE_OPENAI_API_KEY && serverConfig.AZURE_OPENAI_ENDPOINT) {
-      const endpoint = serverConfig.AZURE_OPENAI_ENDPOINT.replace(/\/$/, "");
-      const azureClient = new OpenAI({
-        apiKey: serverConfig.AZURE_OPENAI_API_KEY,
-        baseURL: `${endpoint}/openai/deployments/${serverConfig.AZURE_OPENAI_CHAT_MODEL}`,
-        defaultQuery: { "api-version": serverConfig.AZURE_OPENAI_API_VERSION },
-        defaultHeaders: { "api-key": serverConfig.AZURE_OPENAI_API_KEY },
-      });
-      return { client: azureClient, modelName: serverConfig.AZURE_OPENAI_CHAT_MODEL };
-    }
-
-    // 3. Standard OpenAI
-    const directClient = new OpenAI({
-      apiKey: serverConfig.OPENAI_API_KEY || "dummy",
+    this.keyPool = new KeyPoolRotator({
+      geminiKeys: serverConfig.GEMINI_KEYS,
+      groqKeys: serverConfig.GROQ_KEYS,
+      azureKey: serverConfig.AZURE_OPENAI_API_KEY,
+      azureEndpoint: serverConfig.AZURE_OPENAI_ENDPOINT,
+      azureModel: serverConfig.AZURE_OPENAI_CHAT_MODEL,
+      azureApiVersion: serverConfig.AZURE_OPENAI_API_VERSION,
+      openaiKey: serverConfig.OPENAI_API_KEY,
     });
-    return { client: directClient, modelName: "gpt-4o" };
   }
 
   async generateResponse(
@@ -143,8 +117,6 @@ If the answer is in the context, be clear, accurate, and concise.
 Context:
 ${context || "No specific document context found."}`;
 
-    const { client, modelName } = this.getClient();
-
     const messages = [
       { role: "system", content: systemPrompt },
       ...history.map((h) => ({
@@ -154,13 +126,8 @@ ${context || "No specific document context found."}`;
       { role: "user", content: userMessage },
     ];
 
-    const response = await client.chat.completions.create({
-      model: modelName,
-      messages,
-      temperature: 0.2,
-    });
+    const answer = await this.keyPool.chatCompletion(messages, { temperature: 0.2 });
 
-    const answer = response.choices[0]?.message?.content || "No response generated.";
     return {
       answer,
       image_references: [],
@@ -187,8 +154,6 @@ Answer questions based on the retrieved document context below when available.
 Context:
 ${context || "No specific document context found."}`;
 
-    const { client, modelName } = this.getClient();
-
     const messages = [
       { role: "system", content: systemPrompt },
       ...history.map((h) => ({
@@ -198,18 +163,8 @@ ${context || "No specific document context found."}`;
       { role: "user", content: userMessage },
     ];
 
-    const stream = await client.chat.completions.create({
-      model: modelName,
-      messages,
-      temperature: 0.2,
-      stream: true,
-    });
-
-    for await (const chunk of stream) {
-      const content = chunk.choices[0]?.delta?.content || "";
-      if (content) {
-        yield content;
-      }
+    for await (const chunk of this.keyPool.streamChat(messages)) {
+      yield chunk;
     }
   }
 }

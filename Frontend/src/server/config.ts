@@ -13,9 +13,20 @@ export const serverConfig = {
   PORTKEY_CONFIG_ID: process.env.PORTKEY_CONFIG_ID || "",
   PORTKEY_VIRTUAL_KEY: process.env.PORTKEY_VIRTUAL_KEY || "",
 
-  // Google Gemini settings
+  // Google Gemini Key Pool (supports single key or comma-separated list of 10+ keys)
   GOOGLE_API_KEY: process.env.GOOGLE_API_KEY || "",
   GOOGLE_EMBEDDING_MODEL: process.env.GOOGLE_EMBEDDING_MODEL || "text-embedding-004",
+  GEMINI_KEYS: (process.env.GEMINI_KEYS || process.env.GOOGLE_API_KEY || "")
+    .split(",")
+    .map((k) => k.trim())
+    .filter(Boolean),
+
+  // Groq Key Pool (supports comma-separated list of 10+ keys)
+  GROQ_API_KEY: process.env.GROQ_API_KEY || "",
+  GROQ_KEYS: (process.env.GROQ_KEYS || process.env.GROQ_API_KEY || "")
+    .split(",")
+    .map((k) => k.trim())
+    .filter(Boolean),
 
   // Qdrant
   QDRANT_URL: process.env.QDRANT_URL || "",

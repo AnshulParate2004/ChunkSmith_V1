@@ -1,10 +1,10 @@
 import { QdrantClient } from "@qdrant/js-client-rest";
-import { GoogleGenAI } from "@google/genai";
 import { serverConfig } from "../config";
+import { KeyPoolRotator } from "./key-pool";
 
 export class VectorStoreManager {
   private client: QdrantClient;
-  private genAI?: GoogleGenAI;
+  private keyPool: KeyPoolRotator;
 
   constructor() {
     this.client = new QdrantClient({
@@ -13,44 +13,19 @@ export class VectorStoreManager {
       checkCompatibility: false,
     });
 
-    if (serverConfig.GOOGLE_API_KEY) {
-      this.genAI = new GoogleGenAI({ apiKey: serverConfig.GOOGLE_API_KEY });
-    }
+    this.keyPool = new KeyPoolRotator({
+      geminiKeys: serverConfig.GEMINI_KEYS,
+      groqKeys: serverConfig.GROQ_KEYS,
+      azureKey: serverConfig.AZURE_OPENAI_API_KEY,
+      azureEndpoint: serverConfig.AZURE_OPENAI_ENDPOINT,
+      azureModel: serverConfig.AZURE_OPENAI_CHAT_MODEL,
+      azureApiVersion: serverConfig.AZURE_OPENAI_API_VERSION,
+      openaiKey: serverConfig.OPENAI_API_KEY,
+    });
   }
 
   async getEmbedding(text: string): Promise<number[]> {
-    if (this.genAI) {
-      try {
-        const response = await this.genAI.models.embedContent({
-          model: serverConfig.GOOGLE_EMBEDDING_MODEL || "text-embedding-004",
-          contents: text,
-        });
-        if (response.embedding?.values) {
-          return response.embedding.values;
-        }
-      } catch (err) {
-        console.warn("Failed Google embedding, falling back if Azure is available:", err);
-      }
-    }
-
-    if (serverConfig.AZURE_OPENAI_API_KEY && serverConfig.AZURE_OPENAI_ENDPOINT) {
-      const endpoint = serverConfig.AZURE_OPENAI_ENDPOINT.replace(/\/$/, "");
-      const url = `${endpoint}/openai/deployments/${serverConfig.AZURE_OPENAI_EMBEDDING_MODEL}/embeddings?api-version=${serverConfig.AZURE_OPENAI_API_VERSION}`;
-      const res = await fetch(url, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "api-key": serverConfig.AZURE_OPENAI_API_KEY,
-        },
-        body: JSON.stringify({ input: text }),
-      });
-      if (res.ok) {
-        const json = await res.json();
-        return json.data[0].embedding;
-      }
-    }
-
-    throw new Error("No embedding provider configured or available");
+    return this.keyPool.getEmbedding(text);
   }
 
   async ensureCollection(collectionName: string, vectorSize = 768) {
