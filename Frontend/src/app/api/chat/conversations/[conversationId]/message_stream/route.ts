@@ -58,6 +58,12 @@ export async function GET(
   const url = new URL(request.url);
   const message = url.searchParams.get("message") || "";
 
+  const scoreThresholdParam = url.searchParams.get("scoreThreshold");
+  const scoreThreshold =
+    scoreThresholdParam !== null && !isNaN(parseFloat(scoreThresholdParam))
+      ? parseFloat(scoreThresholdParam)
+      : 0.60;
+
   if (!message) {
     return new Response(JSON.stringify({ detail: "message query param is required" }), {
       status: 400,
@@ -111,14 +117,20 @@ export async function GET(
         });
 
         let searchResults: any[] = [];
-        const images: Array<{ filename: string; data: string }> = [];
+        interface CandidateImage {
+          filename: string;
+          data: string;
+          sourceIdx: number;
+          description?: string;
+        }
+        const candidateImages: CandidateImage[] = [];
 
         // 3. Execute Document Search Tool if plan requires RAG
         if (plan.useRag) {
           send("search_start", { query: plan.ragQuery });
 
           try {
-            searchResults = await vectorManager.search(projectId, plan.ragQuery, 4);
+            searchResults = await vectorManager.search(projectId, plan.ragQuery, 6);
           } catch (e) {
             console.warn("Vector search error:", e);
           }
@@ -166,7 +178,7 @@ export async function GET(
                 }
 
                 scoredChunks.sort((a, b) => b.score - a.score);
-                searchResults = scoredChunks.slice(0, 4).map((s) => ({
+                searchResults = scoredChunks.slice(0, 6).map((s) => ({
                   score: s.score / 10,
                   page_content:
                     s.chunk.enhanced_content ||
@@ -181,9 +193,9 @@ export async function GET(
             }
           }
 
-          // Filter out low confidence vector results (require high semantic relevance >= 0.65 for images & grounding)
+          // Filter out results below user scoreThreshold
           const relevantResults = searchResults.filter(
-            (r) => (r.score !== undefined ? r.score >= 0.65 : true)
+            (r) => (r.score !== undefined ? r.score >= scoreThreshold : true)
           );
 
           // Complete search step
@@ -194,16 +206,20 @@ export async function GET(
             ),
           });
 
-          // Extract images ONLY from high-confidence relevant results
-          relevantResults.forEach((r) => {
+          // Collect candidate images from the retrieved relevant chunks
+          relevantResults.forEach((r, idx) => {
             const meta = r.metadata || {};
             const paths: string[] = meta.image_paths || r.image_paths || [];
+            const interpretation = meta.image_interpretation || "";
+
             paths.forEach((p: string) => {
               const fname = p.split("/").pop();
-              if (fname && !images.some((i) => i.filename === fname) && images.length < 3) {
-                images.push({
+              if (fname && !candidateImages.some((ci) => ci.filename === fname)) {
+                candidateImages.push({
                   filename: fname,
                   data: `/api/projects/${projectId}/images/${fname}`,
+                  sourceIdx: idx + 1,
+                  description: interpretation,
                 });
               }
             });
@@ -211,22 +227,17 @@ export async function GET(
             if (meta.images_base64 && Array.isArray(meta.images_base64)) {
               meta.images_base64.forEach((img: any) => {
                 const fname = img.filename || "image.png";
-                if (!images.some((i) => i.filename === fname) && images.length < 3) {
-                  images.push({
+                if (!candidateImages.some((ci) => ci.filename === fname)) {
+                  candidateImages.push({
                     filename: fname,
                     data: img.data || `/api/projects/${projectId}/images/${fname}`,
+                    sourceIdx: idx + 1,
+                    description: img.description || interpretation,
                   });
                 }
               });
             }
           });
-
-          if (images.length > 0) {
-            send("images_found", { count: images.length });
-            images.forEach((img) => {
-              send("image", { filename: img.filename, data: img.data });
-            });
-          }
         }
 
         // 4. Response Start
@@ -245,16 +256,56 @@ Clearly explain your core capabilities:
 4. **Interactive Document Chat**: Conversational exploration and real-time streaming answers across all uploaded files.
 Be concise, clear, and professional.`;
         } else if (plan.useRag && searchResults.length > 0) {
-          const context = searchResults
-            .map((r, i) => `[Source ${i + 1}]:\n${r.page_content}`)
-            .join("\n\n");
+          const relevantResults = searchResults.filter(
+            (r) => (r.score !== undefined ? r.score >= scoreThreshold : true)
+          );
 
-          systemPrompt = `You are ChunkSmith AI, an intelligent multimodal document analysis assistant.
-Answer the user's question accurately based on the document context below.
-Be concise, helpful, and clear. If the context does not contain the answer, answer politely based on general knowledge while noting it is not explicitly in the indexed context.
+          if (relevantResults.length > 0) {
+            const context = relevantResults
+              .map((r, i) => {
+                const meta = r.metadata || {};
+                const sourceImages = candidateImages.filter((ci) => ci.sourceIdx === i + 1);
+                let figSection = "";
+                if (sourceImages.length > 0) {
+                  figSection =
+                    "\nCandidate Figures in this section:\n" +
+                    sourceImages
+                      .map(
+                        (fig) =>
+                          `- Figure ID: ${fig.filename}${
+                            fig.description ? ` (Visual Description: ${fig.description})` : ""
+                          }`
+                      )
+                      .join("\n");
+                }
+                const scorePct = r.score !== undefined ? ` [Match: ${Math.round(r.score * 100)}%]` : "";
+                return `[Source ${i + 1}]${scorePct} (${meta.filename || "Document"}):\n${r.page_content}${figSection}`;
+              })
+              .join("\n\n---\n\n");
+
+            systemPrompt = `You are ChunkSmith AI, an intelligent multimodal document analysis assistant.
+Answer the user's question accurately, concisely, and factually based on the document context below.
+
+MULTIMODAL FIGURE SELECTION INSTRUCTIONS:
+- Candidate figures associated with the retrieved sources are listed with their Figure IDs and descriptions.
+- Carefully evaluate whether any candidate figure is genuinely helpful, informative, and directly relevant to illustrating the answer to the user's question (e.g., biological diagrams, chemical reaction setups, engineering architecture, charts, anatomy).
+- Never select decorative images, logos, headers, or figures that are not directly relevant to what was asked.
+- At the very end of your response, on a new line, output an explicit image selection tag:
+  If one or more figures are directly relevant:
+  [DISPLAY_IMAGES: filename1.png, filename2.png]
+  (Specify only exact Figure ID filenames, maximum 2).
+  If no figures are directly relevant or needed:
+  [DISPLAY_IMAGES: none]
 
 Document Context:
 ${context}`;
+          } else {
+            systemPrompt = `You are ChunkSmith AI, an intelligent multimodal document analysis assistant.
+No document sections matched the current relevance threshold (${Math.round(scoreThreshold * 100)}%).
+Politely inform the user that no relevant content was found in their indexed documents with the current threshold filter, and suggest lowering the relevance threshold slider if they would like broader results. Answer helpfully if you have general knowledge regarding their question.
+At the very end of your response, output:
+[DISPLAY_IMAGES: none]`;
+          }
         } else {
           systemPrompt = `You are ChunkSmith AI, a friendly and intelligent multimodal document analysis assistant.
 Respond politely and concisely to user greetings and general conversation.
@@ -285,24 +336,100 @@ Let the user know that you are ready to answer questions about their uploaded pr
         });
 
         let fullAnswer = "";
+        let streamBuffer = "";
 
         for await (const chunk of keyPool.streamChat(messages)) {
           fullAnswer += chunk;
-          send("content", { content: chunk });
+          streamBuffer += chunk;
+
+          // Check if streamBuffer has a tag start '['
+          const bracketIdx = streamBuffer.indexOf("[");
+          if (bracketIdx !== -1) {
+            if (bracketIdx > 0) {
+              const flush = streamBuffer.slice(0, bracketIdx);
+              send("content", { content: flush });
+              streamBuffer = streamBuffer.slice(bracketIdx);
+            }
+            const closeIdx = streamBuffer.indexOf("]");
+            if (closeIdx !== -1) {
+              const tagCandidate = streamBuffer.slice(0, closeIdx + 1);
+              if (/\[DISPLAY_IMAGES:\s*[^\]]+\]/i.test(tagCandidate)) {
+                // Discard tag from user stream
+                streamBuffer = streamBuffer.slice(closeIdx + 1);
+              } else {
+                // Not an image tag, stream it
+                send("content", { content: tagCandidate });
+                streamBuffer = streamBuffer.slice(closeIdx + 1);
+              }
+            } else if (streamBuffer.length > 150) {
+              // Bracket wasn't an image tag
+              send("content", { content: streamBuffer });
+              streamBuffer = "";
+            }
+          } else {
+            send("content", { content: streamBuffer });
+            streamBuffer = "";
+          }
+        }
+
+        if (streamBuffer && !/\[DISPLAY_IMAGES:\s*[^\]]+\]/i.test(streamBuffer)) {
+          send("content", { content: streamBuffer });
+        }
+
+        // Clean answer for saving & final display
+        const cleanedAnswer = fullAnswer.replace(/\[DISPLAY_IMAGES:\s*[^\]]+\]/gi, "").trim();
+
+        // Parse approved figures
+        const approvedImages: Array<{ filename: string; data: string }> = [];
+        const tagMatch = fullAnswer.match(/\[DISPLAY_IMAGES:\s*([^\]]+)\]/i);
+
+        if (tagMatch && tagMatch[1]) {
+          const tagVal = tagMatch[1].trim();
+          if (!tagVal.toLowerCase().includes("none")) {
+            const requestedFiles = tagVal
+              .split(",")
+              .map((f) => f.trim().toLowerCase())
+              .filter(Boolean);
+
+            for (const req of requestedFiles) {
+              const found = candidateImages.find(
+                (ci) =>
+                  ci.filename.toLowerCase() === req ||
+                  ci.filename.toLowerCase().includes(req) ||
+                  req.includes(ci.filename.toLowerCase())
+              );
+              if (found && !approvedImages.some((ai) => ai.filename === found.filename)) {
+                approvedImages.push({
+                  filename: found.filename,
+                  data: found.data,
+                });
+              }
+            }
+          }
+        }
+
+        // Emit images SSE events ONLY for LLM-approved images
+        if (approvedImages.length > 0) {
+          send("images_found", { count: approvedImages.length });
+          approvedImages.forEach((img) => {
+            send("image", { filename: img.filename, data: img.data });
+          });
+        } else {
+          send("images_found", { count: 0 });
         }
 
         // 6. Persist messages in database
         try {
           await convManager.addMessage(conversationId, "user", message);
-          await convManager.addMessage(conversationId, "assistant", fullAnswer, {
-            image_filenames: images.map((i) => i.filename),
+          await convManager.addMessage(conversationId, "assistant", cleanedAnswer, {
+            image_filenames: approvedImages.map((i) => i.filename),
           });
         } catch (dbErr) {
           console.warn("Failed to persist chat messages to DB:", dbErr);
         }
 
         // 7. Complete and End
-        send("complete", { answer: fullAnswer });
+        send("complete", { answer: cleanedAnswer });
         send("end");
       } catch (err: any) {
         console.error("Chat streaming error:", err);

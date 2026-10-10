@@ -4,7 +4,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card } from '@/components/ui/card';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { ArrowLeft, Send, Loader2 } from 'lucide-react';
+import { ArrowLeft, Send, Loader2, SlidersHorizontal } from 'lucide-react';
 import { apiService, API_BASE_URL } from '@/services/api';
 import { toast } from 'sonner';
 import { StreamingSteps, StreamingStep } from '@/components/Chat/StreamingSteps';
@@ -12,6 +12,8 @@ import { ChatMessage, ChatImage } from '@/components/Chat/ChatMessage';
 import { useAuth } from '@/context/AuthContext';
 import { ChatSidebar } from '@/components/Chat/ChatSidebar';
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from "@/components/ui/resizable";
+import { Slider } from "@/components/ui/slider";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 
 interface Message {
   id: string;
@@ -49,6 +51,7 @@ const ChatPage = () => {
   const [inputMessage, setInputMessage] = useState('');
   const [isStreaming, setIsStreaming] = useState(false);
   const [streamingSteps, setStreamingSteps] = useState<StreamingStep[]>([]);
+  const [scoreThreshold, setScoreThreshold] = useState<number>(0.60);
 
   // When we create a brand-new conversation and immediately stream,
   // we don't want the initial auto history load to overwrite the
@@ -267,7 +270,7 @@ const ChatPage = () => {
     const encodedMessage = encodeURIComponent(message);
     const encodedToken = encodeURIComponent(session.access_token);
 
-    const url = `${API_BASE_URL}/chat/conversations/${targetConversationId}/message_stream?message=${encodedMessage}&token=${encodedToken}`;
+    const url = `${API_BASE_URL}/chat/conversations/${targetConversationId}/message_stream?message=${encodedMessage}&token=${encodedToken}&scoreThreshold=${scoreThreshold}`;
 
     const eventSource = new EventSource(url);
     eventSourceRef.current = eventSource;
@@ -430,8 +433,15 @@ const ChatPage = () => {
           if (writeStepId) {
             updateStep(writeStepId, { status: 'complete', label: 'Answer complete' });
           }
-
-          // Images are already attached during 'image' events via currentImagesRef
+          if (data.answer) {
+            setMessages(prev =>
+              prev.map(msg =>
+                msg.id === streamingMessageIdRef.current
+                  ? { ...msg, content: data.answer }
+                  : msg
+              ).slice(-10)
+            );
+          }
           break;
 
         case 'end':
@@ -522,6 +532,83 @@ const ChatPage = () => {
               <p className="text-xs text-muted-foreground">in {projectId}</p>
             )}
           </div>
+        </div>
+
+        {/* Relevance Score Threshold Filter Control */}
+        <div className="flex items-center gap-2">
+          <Popover>
+            <PopoverTrigger asChild>
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-9 px-3 gap-2 text-xs font-medium border-border/80 hover:bg-accent/60 shadow-xs transition-colors"
+              >
+                <SlidersHorizontal className="w-3.5 h-3.5 text-primary" />
+                <span className="hidden sm:inline text-muted-foreground">Relevance Filter:</span>
+                <span className="font-semibold text-primary">
+                  {Math.round(scoreThreshold * 100)}%
+                </span>
+              </Button>
+            </PopoverTrigger>
+            <PopoverContent className="w-80 p-4 space-y-4" align="end">
+              <div className="space-y-1">
+                <div className="flex items-center justify-between">
+                  <h4 className="text-sm font-semibold text-foreground">
+                    Relevance Score Threshold
+                  </h4>
+                  <span className="text-xs font-bold text-primary px-2 py-0.5 rounded bg-primary/10">
+                    {Math.round(scoreThreshold * 100)}%
+                  </span>
+                </div>
+                <p className="text-xs text-muted-foreground leading-relaxed">
+                  Only document chunks with vector similarity at or above this threshold will be retrieved and analyzed.
+                </p>
+              </div>
+
+              <div className="space-y-2 pt-1">
+                <Slider
+                  min={0.20}
+                  max={0.95}
+                  step={0.05}
+                  value={[scoreThreshold]}
+                  onValueChange={(vals) => setScoreThreshold(vals[0])}
+                  className="w-full cursor-pointer"
+                />
+                <div className="flex justify-between text-[10px] text-muted-foreground font-mono">
+                  <span>20% (Broad)</span>
+                  <span>60% (Default)</span>
+                  <span>95% (Strict)</span>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-1.5 pt-2 border-t">
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-7 text-[11px] px-2 flex-1"
+                  onClick={() => setScoreThreshold(0.40)}
+                >
+                  Broad (40%)
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-7 text-[11px] px-2 flex-1"
+                  onClick={() => setScoreThreshold(0.60)}
+                >
+                  Balanced (60%)
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-7 text-[11px] px-2 flex-1"
+                  onClick={() => setScoreThreshold(0.75)}
+                >
+                  Strict (75%)
+                </Button>
+              </div>
+            </PopoverContent>
+          </Popover>
         </div>
       </div>
 
