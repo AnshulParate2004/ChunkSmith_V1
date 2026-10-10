@@ -45,20 +45,57 @@ export async function GET(
     const rawChunks = JSON.parse(jsonBuffer.toString("utf-8"));
     const chunks = Array.isArray(rawChunks)
       ? rawChunks.map((c: any, idx: number) => {
-          const text = c.enhanced_content || c.original_text || c.text || "";
-          const type = (c.metadata?.type || "text").toLowerCase();
+          const meta = c.metadata || {};
+          const text =
+            c.enhanced_content || c.page_content || meta.enhanced_content || c.text || "";
+          const orig = c.original_text || meta.original_text || text;
+          const rawTables = meta.raw_tables_html || c.raw_tables_html || [];
+          const imagePaths = meta.image_paths || c.image_paths || [];
+          const rawBase64 = meta.image_base64 || c.image_base64 || [];
+
+          const imagesBase64 = imagePaths.map((p: string, i: number) => {
+            const filename = p.split("/").pop() || `image_${i + 1}.png`;
+            const base64Data = rawBase64[i]
+              ? `data:image/png;base64,${rawBase64[i]}`
+              : p;
+            return {
+              filename,
+              data: base64Data,
+              path: p,
+            };
+          });
+
+          if (imagesBase64.length === 0 && rawBase64.length > 0) {
+            rawBase64.forEach((b64: string, i: number) => {
+              imagesBase64.push({
+                filename: `image_${i + 1}.png`,
+                data: `data:image/png;base64,${b64}`,
+                path: "",
+              });
+            });
+          }
+
+          let contentTypes: string[] = meta.content_types || c.content_types || [];
+          if (!contentTypes.length) {
+            contentTypes = ["text"];
+            if (imagesBase64.length > 0 || imagePaths.length > 0) contentTypes.push("image");
+            if (rawTables.length > 0) contentTypes.push("table");
+          }
+
           return {
-            chunk_index: c.chunk_index ?? idx,
+            chunk_index: meta.chunk_index ?? c.chunk_index ?? idx,
             enhanced_content: text,
-            original_text: c.original_text || text,
-            raw_tables_html: c.raw_tables_html || (type.includes("table") ? [text] : []),
-            ai_questions: c.ai_questions || "",
-            ai_summary: c.ai_summary || "",
-            image_interpretation: c.image_interpretation || "",
-            table_interpretation: c.table_interpretation || "",
-            image_paths: c.image_paths || [],
-            page_numbers: c.page_numbers || (c.metadata?.page_number ? [c.metadata.page_number] : [1]),
-            content_types: c.content_types || [type],
+            original_text: orig,
+            raw_tables_html: rawTables,
+            ai_questions: c.ai_questions || meta.ai_questions || "",
+            ai_summary: c.ai_summary || meta.ai_summary || "",
+            image_interpretation: c.image_interpretation || meta.image_interpretation || "",
+            table_interpretation: c.table_interpretation || meta.table_interpretation || "",
+            image_paths: imagePaths,
+            page_numbers:
+              meta.page_numbers || c.page_numbers || (meta.page_number ? [meta.page_number] : [1]),
+            content_types: contentTypes,
+            images_base64: imagesBase64,
           };
         })
       : [];
@@ -69,7 +106,7 @@ export async function GET(
       file_path: `${projectId}/uploads/${documentId}.pdf`,
       file_size_kb: Math.round(jsonBuffer.length / 1024),
       chunks_count: chunks.length,
-      images_included: false,
+      images_included: chunks.some((c: any) => c.images_base64?.length > 0),
       chunks: chunks,
     });
   } catch (error: any) {
