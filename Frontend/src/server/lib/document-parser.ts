@@ -30,7 +30,6 @@ export class DocumentParser {
     } = {}
   ): Promise<ParsedElement[]> {
     if (!this.apiKey) {
-      // Fallback: If no Unstructured API key is configured, create clean fallback text chunks
       return [
         {
           type: "NarrativeText",
@@ -41,6 +40,58 @@ export class DocumentParser {
       ];
     }
 
+    // Support both Unstructured Transform V2 API and legacy V1 API
+    const isV2 = this.apiUrl.includes("/api/v2");
+
+    if (isV2) {
+      const form = new FormData();
+      form.append("input", buffer, { filename });
+
+      const targetUrl = this.apiUrl.endsWith("/parse")
+        ? this.apiUrl
+        : `${this.apiUrl.replace(/\/$/, "")}/parse`;
+
+      const response = await fetch(targetUrl, {
+        method: "POST",
+        headers: {
+          "unstructured-api-key": this.apiKey,
+          ...form.getHeaders(),
+        },
+        body: form.getBuffer() as any,
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`Unstructured V2 API failed (${response.status}): ${errorText}`);
+      }
+
+      const json = await response.json();
+      
+      // If elements are present in v2 output
+      if (json.elements && Array.isArray(json.elements)) {
+        return json.elements.map((elem: any) => ({
+          type: elem.type || "NarrativeText",
+          element_id: elem.element_id || crypto.randomUUID(),
+          text: elem.text || "",
+          metadata: elem.metadata || { filename },
+        }));
+      }
+
+      // If markdown is returned, extract chunks
+      if (json.markdown) {
+        const paragraphs = json.markdown.split(/\n\n+/).filter(Boolean);
+        return paragraphs.map((para: string, idx: number) => ({
+          type: "NarrativeText",
+          element_id: `${json.id || crypto.randomUUID()}_${idx}`,
+          text: para.trim(),
+          metadata: { filename, ...json.metadata },
+        }));
+      }
+
+      return [];
+    }
+
+    // Legacy V1 General API
     const form = new FormData();
     form.append("files", buffer, { filename });
     form.append("strategy", options.strategy || "auto");
