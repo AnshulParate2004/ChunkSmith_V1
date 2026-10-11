@@ -195,39 +195,32 @@ const ProjectPage = () => {
       return;
     }
 
-    setIsUploading(true);
-    try {
-      const result = await apiService.uploadPDF(selectedFile, settings, projectId!);
+    const docId = `${Date.now()}_${selectedFile.name.replace(/[^a-zA-Z0-9.-]/g, "_")}`;
+    setSelectedFile(null);
+    setIsUploading(false);
 
-      if (result && result.document_id) {
-        localStorage.setItem(`processing_${result.document_id}`, JSON.stringify({
-          documentId: result.document_id,
-          result: {
-            chunks_processed: result.chunks_count || 0,
-            images_extracted: 0
-          },
-          processingTime: 3,
-          completedAt: new Date().toISOString()
-        }));
-      }
+    // Navigate immediately to processing window so the user sees live progress!
+    navigate(`/processing/${docId}?projectId=${projectId}`);
 
-      toast({
-        title: "File uploaded successfully!",
-        description: `Processing document: ${selectedFile.name} (Language: ${settings.languages})`,
+    // Trigger processing upload with matching docId
+    apiService.uploadPDF(selectedFile, settings, projectId!, docId)
+      .then((result) => {
+        if (result && result.document_id) {
+          localStorage.setItem(`processing_${result.document_id}`, JSON.stringify({
+            documentId: result.document_id,
+            result: {
+              chunks_processed: result.chunks_count || 0,
+              images_extracted: 0
+            },
+            processingTime: 5,
+            completedAt: new Date().toISOString()
+          }));
+        }
+      })
+      .catch((error) => {
+        console.error("Upload error:", error);
       });
-
-      setSelectedFile(null);
-      navigate(`/processing/${result.document_id}?projectId=${projectId}`);
-    } catch (error) {
-      toast({
-        title: "Upload failed",
-        description: error instanceof Error ? error.message : "Unknown error occurred",
-        variant: "destructive",
-      });
-    } finally {
-      setIsUploading(false);
-    }
-  }, [selectedFile, settings, uploadedDocs, projectId, toast, navigate]);
+  }, [selectedFile, settings, projectId, toast, navigate]);
 
   return (
     <div className="flex min-h-screen bg-background">

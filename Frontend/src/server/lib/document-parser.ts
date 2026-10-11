@@ -88,11 +88,14 @@ export class DocumentParser {
     // Legacy V1 General API
     const form = new FormData();
     form.append("files", buffer, { filename });
-    form.append("strategy", options.strategy || "auto");
+    form.append("strategy", options.strategy || "hi_res");
     form.append("chunking_strategy", options.chunkingStrategy || "by_title");
     form.append("max_characters", String(options.maxCharacters || 3000));
     form.append("new_after_n_chars", String(options.newAfterNChars || 3800));
     form.append("combine_text_under_n_chars", String(options.combineTextUnderNChars || 200));
+    form.append("pdf_infer_table_structure", "true");
+    form.append("coordinates", "true");
+    form.append("extract_image_block_types", JSON.stringify(["Image", "Figure", "Table"]));
 
     if (options.languages && options.languages.length) {
       form.append("languages", JSON.stringify(options.languages));

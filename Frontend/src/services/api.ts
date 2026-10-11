@@ -164,8 +164,8 @@ class ApiService {
     return response.json();
   }
 
-  // UPDATED: Now requires project_id
-  async uploadPDF(file: File, settings: ProcessSettings, projectId: string) {
+  // UPDATED: Now requires project_id, supports customDocId
+  async uploadPDF(file: File, settings: ProcessSettings, projectId: string, customDocId?: string) {
     const queryParams = new URLSearchParams({
       project_id: projectId,
       max_characters: String(settings.maxCharacters),
@@ -175,10 +175,16 @@ class ApiService {
       extract_tables: String(settings.extractTables),
       languages: settings.languages || 'english',
     });
+    if (customDocId) {
+      queryParams.set('document_id', customDocId);
+    }
 
     const formData = new FormData();
     formData.append('file', file);
     formData.append('project_id', projectId);
+    if (customDocId) {
+      formData.append('document_id', customDocId);
+    }
     formData.append('max_characters', String(settings.maxCharacters));
     formData.append('new_after_n_chars', String(settings.newAfterNChars));
     formData.append('combine_text_under_n_chars', String(settings.combineTextUnderNChars));

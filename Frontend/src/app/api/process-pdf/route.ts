@@ -30,7 +30,8 @@ export async function POST(request: Request) {
       return NextResponse.json({ detail: "file and project_id are required" }, { status: 400 });
     }
 
-    const documentId = `${Date.now()}_${file.name.replace(/[^a-zA-Z0-9.-]/g, "_")}`;
+    const rawDocId = (formData.get("document_id") as string | null) || url.searchParams.get("document_id");
+    const documentId = rawDocId ? rawDocId.trim() : `${Date.now()}_${file.name.replace(/[^a-zA-Z0-9.-]/g, "_")}`;
     const arrayBuffer = await file.arrayBuffer();
     const buffer = Buffer.from(arrayBuffer);
     const sizeMb = Number((buffer.length / (1024 * 1024)).toFixed(2));
@@ -81,18 +82,34 @@ export async function POST(request: Request) {
       languages,
     });
 
-    // 4. Transform to chunks
-    const chunks = elements.map((elem, idx) => ({
-      chunk_id: `${documentId}_${idx}`,
-      document_id: documentId,
-      text: elem.text,
-      metadata: {
-        ...elem.metadata,
+    // 4. Transform to chunks & preserve image data
+    let totalImages = 0;
+    const chunks = elements.map((elem, idx) => {
+      const meta = elem.metadata || {};
+      const imgB64 = meta.image_base64 || (elem as any).image_base64 || null;
+      const imgPaths = meta.image_paths || (elem as any).image_paths || [];
+      const rawBase64 = imgB64 ? (Array.isArray(imgB64) ? imgB64 : [imgB64]) : [];
+
+      if (rawBase64.length > 0 || imgPaths.length > 0) {
+        totalImages += Math.max(rawBase64.length, imgPaths.length);
+      }
+
+      return {
+        chunk_id: `${documentId}_${idx}`,
         document_id: documentId,
-        project_id: projectId,
-        type: elem.type,
-      },
-    }));
+        text: elem.text,
+        image_paths: imgPaths,
+        image_base64: rawBase64,
+        metadata: {
+          ...meta,
+          document_id: documentId,
+          project_id: projectId,
+          type: elem.type,
+          image_paths: imgPaths,
+          image_base64: rawBase64,
+        },
+      };
+    });
 
     // 5. Store processed JSON in Supabase Storage
     const jsonBuffer = Buffer.from(JSON.stringify(chunks, null, 2), "utf-8");
@@ -111,12 +128,13 @@ export async function POST(request: Request) {
       );
     }
 
-    // 7. Update status to completed
+    // 7. Update status to completed with accurate image_count
     const { error: updateError } = await supabase
       .from("documents")
       .update({
         status: "completed",
         chunk_count: chunks.length,
+        image_count: totalImages,
         pdf_path: pdfPath,
         json_path: jsonPath,
         updated_at: new Date().toISOString(),

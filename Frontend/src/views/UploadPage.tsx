@@ -33,31 +33,31 @@ const UploadPage = () => {
       return;
     }
 
-    setIsUploading(true);
-    try {
-      const response = await apiService.uploadPDF(selectedFile, settings, projectId);
-      toast.success('Upload started successfully');
+    const docId = `${Date.now()}_${selectedFile.name.replace(/[^a-zA-Z0-9.-]/g, "_")}`;
+    setSelectedFile(null);
+    setIsUploading(false);
 
-      if (response && response.document_id) {
-        localStorage.setItem(`processing_${response.document_id}`, JSON.stringify({
-          documentId: response.document_id,
-          result: {
-            chunks_processed: response.chunks_count || 0,
-            images_extracted: 0
-          },
-          processingTime: 3,
-          completedAt: new Date().toISOString()
-        }));
-      }
+    // Navigate immediately to processing window so the user sees live progress!
+    navigate(`/processing/${docId}?projectId=${projectId}`);
 
-      // Navigate to processing page
-      navigate(`/processing/${response.document_id}?projectId=${projectId}`);
-    } catch (error: any) {
-      toast.error(error.message || 'Upload failed');
-      console.error('Upload error:', error);
-    } finally {
-      setIsUploading(false);
-    }
+    apiService.uploadPDF(selectedFile, settings, projectId, docId)
+      .then((response) => {
+        if (response && response.document_id) {
+          localStorage.setItem(`processing_${response.document_id}`, JSON.stringify({
+            documentId: response.document_id,
+            result: {
+              chunks_processed: response.chunks_count || 0,
+              images_extracted: 0
+            },
+            processingTime: 5,
+            completedAt: new Date().toISOString()
+          }));
+        }
+      })
+      .catch((error: any) => {
+        toast.error(error.message || 'Upload failed');
+        console.error('Upload error:', error);
+      });
   };
 
   return (

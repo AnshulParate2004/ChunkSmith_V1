@@ -65,9 +65,9 @@ export async function GET(
         }
       } catch {}
 
-      // Check document status loop (up to 15 seconds)
+      // Check document status loop (up to 180 seconds for deep OCR/RAG/embeddings)
       let attempts = 0;
-      const maxAttempts = 15;
+      const maxAttempts = 180;
 
       const interval = setInterval(async () => {
         attempts++;
@@ -120,14 +120,14 @@ export async function GET(
             return;
           }
 
-          // Emit progressing steps
-          const step = Math.min(3, Math.floor(attempts / 2) + 1);
-          const progress = Math.min(90, attempts * 10);
+          // Emit progressing steps gracefully across up to 3 minutes
+          const step = attempts < 10 ? 1 : attempts < 40 ? 2 : attempts < 90 ? 3 : 4;
+          const progress = Math.min(95, Math.floor(10 + (attempts / maxAttempts) * 85));
           sendEvent("progress", {
             step,
-            step_name: step === 1 ? "Upload" : step === 2 ? "Parse" : "AI Process",
+            step_name: step === 1 ? "Upload" : step === 2 ? "Parse & Extract" : step === 3 ? "Chunking" : "Vectorizing",
             progress,
-            message: `Processing document (${progress}%)...`,
+            message: step === 1 ? "Uploading file..." : step === 2 ? "Parsing layout and extracting tables/images..." : step === 3 ? "Chunking document text..." : "Generating Gemini embeddings...",
             document_id: documentId,
           });
 

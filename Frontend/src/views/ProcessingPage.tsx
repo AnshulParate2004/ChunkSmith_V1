@@ -82,7 +82,11 @@ const ProcessingPage = () => {
         if (response.success) {
           const result = {
             chunks_processed: response.chunks_count,
-            images_extracted: response.chunks?.reduce((acc: number, chunk: any) => acc + (chunk.image_paths?.length || 0), 0) || 0
+            images_extracted: response.chunks?.reduce((acc: number, chunk: any) => {
+              const pathsCount = chunk.image_paths?.length || 0;
+              const b64Count = chunk.images_base64?.length || 0;
+              return acc + Math.max(pathsCount, b64Count);
+            }, 0) || 0
           };
 
           const dataToSave: SavedProcessingData = {
