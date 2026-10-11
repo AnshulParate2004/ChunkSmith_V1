@@ -31,7 +31,7 @@ const ProcessingPage = () => {
   const [savedData, setSavedData] = useState<SavedProcessingData | null>(null);
   const [showViewModal, setShowViewModal] = useState(false);
 
-  const { messages, connected, error } = useSSE(hasSavedData ? null : (documentId || null));
+  const { messages, lastMessage, connected, error } = useSSE(hasSavedData ? null : (documentId || null));
 
   const [currentStep, setCurrentStep] = useState(1);
   const [progress, setProgress] = useState(0);
@@ -41,6 +41,7 @@ const ProcessingPage = () => {
   const [processingTime, setProcessingTime] = useState(0);
   const [result, setResult] = useState<any>(null);
   const timerRef = useRef<NodeJS.Timeout | null>(null);
+  const logsEndRef = useRef<HTMLDivElement | null>(null);
 
   // Save project mapping if available
   useEffect(() => {
@@ -49,9 +50,16 @@ const ProcessingPage = () => {
     }
   }, [documentId, queryProjectId]);
 
-  // Load saved data on mount
+  // Load saved data or upload error on mount
   useEffect(() => {
     if (documentId) {
+      const uploadError = localStorage.getItem(`error_${documentId}`);
+      if (uploadError) {
+        setStatusMessage(uploadError);
+        setStatusType('error');
+        return;
+      }
+
       const saved = localStorage.getItem(`processing_${documentId}`);
       if (saved) {
         const data: SavedProcessingData = JSON.parse(saved);
@@ -139,10 +147,13 @@ const ProcessingPage = () => {
     }
   }, [isComplete]);
 
+  // Auto-scroll logs to bottom when a new distinct log message arrives
   useEffect(() => {
-    if (messages.length === 0) return;
+    logsEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [messages.length]);
 
-    const lastMessage = messages[messages.length - 1];
+  useEffect(() => {
+    if (!lastMessage) return;
 
     switch (lastMessage.type) {
       case 'connected':
@@ -154,7 +165,7 @@ const ProcessingPage = () => {
         if (lastMessage.data.step) {
           setCurrentStep(lastMessage.data.step);
         }
-        if (lastMessage.data.progress) {
+        if (lastMessage.data.progress !== undefined) {
           setProgress(lastMessage.data.progress);
         }
         if (lastMessage.data.message) {
@@ -188,7 +199,7 @@ const ProcessingPage = () => {
         toast.error('Processing failed');
         break;
     }
-  }, [messages]);
+  }, [lastMessage, documentId, processingTime]);
 
   const handleDownload = async () => {
     try {
@@ -235,7 +246,7 @@ const ProcessingPage = () => {
     <>
       {showViewModal && (
         <ViewDocumentsModal
-          fileName={`Document-${documentId}.pdf`}
+          fileName={documentId ? (documentId.endsWith('.pdf') ? documentId : `${documentId}.pdf`) : 'Document.pdf'}
           documentId={documentId || ''}
           projectId={queryProjectId || (documentId && localStorage.getItem(`doc_${documentId}_project`)) || localStorage.getItem('currentProjectId') || ''}
           onClose={() => setShowViewModal(false)}
@@ -316,15 +327,18 @@ const ProcessingPage = () => {
               <div className="space-y-2 max-h-96 overflow-y-auto">
                 {messages.map((msg, index) => (
                   <div
-                    key={index}
-                    className="p-3 bg-muted/50 rounded text-sm font-mono"
+                    key={msg.id || index}
+                    className="p-3 bg-muted/50 rounded text-sm font-mono flex items-start gap-2"
                   >
-                    <span className="text-muted-foreground">
-                      [{new Date().toLocaleTimeString()}]
+                    <span className="text-muted-foreground whitespace-nowrap text-xs mt-0.5">
+                      [{msg.timestamp || new Date().toLocaleTimeString()}]
                     </span>{' '}
-                    {msg.data.message || JSON.stringify(msg.data)}
+                    <span className="text-foreground">
+                      {msg.data.message || JSON.stringify(msg.data)}
+                    </span>
                   </div>
                 ))}
+                <div ref={logsEndRef} />
               </div>
             </div>
           )}

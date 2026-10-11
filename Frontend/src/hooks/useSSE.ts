@@ -2,6 +2,8 @@ import { useEffect, useRef, useState } from 'react';
 import { API_BASE_URL } from '@/services/api';
 
 export interface SSEMessage {
+  id?: string;
+  timestamp?: string;
   type: 'connected' | 'progress' | 'complete' | 'error';
   data: {
     status?: string;
@@ -27,6 +29,7 @@ export interface SSEMessage {
 
 export const useSSE = (documentId: string | null) => {
   const [messages, setMessages] = useState<SSEMessage[]>([]);
+  const [lastMessage, setLastMessage] = useState<SSEMessage | null>(null);
   const [connected, setConnected] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const eventSourceRef = useRef<EventSource | null>(null);
@@ -63,11 +66,28 @@ export const useSSE = (documentId: string | null) => {
             const data = JSON.parse(event.data);
 
             const message: SSEMessage = {
+              id: `${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
+              timestamp: new Date().toLocaleTimeString(),
               type: data.type || 'progress',
               data: data.data || data
             };
 
-            setMessages((prev) => [...prev, message]);
+            setLastMessage(message);
+
+            // Deduplicate logs: Only append to log list if message text or step has changed
+            setMessages((prev) => {
+              const lastLog = prev[prev.length - 1];
+              const currentText = message.data?.message;
+              const lastText = lastLog?.data?.message;
+
+              // If the text is the exact same as the last log, don't duplicate it in the log view
+              if (lastLog && currentText && lastText && currentText === lastText) {
+                return prev;
+              }
+
+              return [...prev, message];
+            });
+
             if (message.type === 'complete') {
               try { eventSource.close(); } catch {}
             }
@@ -89,7 +109,6 @@ export const useSSE = (documentId: string | null) => {
             setTimeout(() => {
               if (eventSourceRef.current === eventSource) {
                 eventSource.close();
-                connect();
               }
             }, 3000);
           }
@@ -110,7 +129,10 @@ export const useSSE = (documentId: string | null) => {
     };
   }, [documentId]);
 
-  const clearMessages = () => setMessages([]);
+  const clearMessages = () => {
+    setMessages([]);
+    setLastMessage(null);
+  };
 
-  return { messages, connected, error, clearMessages };
+  return { messages, lastMessage, connected, error, clearMessages };
 };

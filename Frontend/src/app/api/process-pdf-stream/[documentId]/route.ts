@@ -69,6 +69,17 @@ export async function GET(
       let attempts = 0;
       const maxAttempts = 180;
 
+      const abortHandler = () => {
+        clearInterval(interval);
+        try {
+          controller.close();
+        } catch {}
+      };
+
+      if (request.signal) {
+        request.signal.addEventListener("abort", abortHandler);
+      }
+
       const interval = setInterval(async () => {
         attempts++;
 
@@ -133,25 +144,35 @@ export async function GET(
 
           if (attempts >= maxAttempts) {
             clearInterval(interval);
-            // Fallback: check if json exists in storage
-            sendEvent("complete", {
-              document_id: documentId,
-              chunks_processed: doc?.chunk_count || 0,
-              images_extracted: 0,
-              result: {
+            if (doc && doc.status === "completed") {
+              sendEvent("complete", {
                 document_id: documentId,
-                chunks_processed: doc?.chunk_count || 0,
-                images_extracted: 0,
-                json_path: "",
-                vector_store_path: "qdrant",
-                pickle_path: "",
-              },
-            });
+                chunks_processed: doc.chunk_count || 0,
+                images_extracted: doc.image_count || 0,
+                result: {
+                  document_id: documentId,
+                  chunks_processed: doc.chunk_count || 0,
+                  images_extracted: doc.image_count || 0,
+                  json_path: doc.json_path || "",
+                  vector_store_path: "qdrant",
+                  pickle_path: "",
+                },
+              });
+            } else {
+              sendEvent("error", {
+                message: "Document processing timed out or failed to start on server. Please try uploading again.",
+                document_id: documentId,
+              });
+            }
             controller.close();
           }
         } catch (err: any) {
           if (attempts >= maxAttempts) {
             clearInterval(interval);
+            sendEvent("error", {
+              message: "Document processing stream encountered an error.",
+              document_id: documentId,
+            });
             controller.close();
           }
         }

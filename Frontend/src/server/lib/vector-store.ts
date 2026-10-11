@@ -50,22 +50,31 @@ export class VectorStoreManager {
     const firstVector = await this.getEmbedding(docs[0].pageContent);
     await this.ensureCollection(collectionName, firstVector.length);
 
-    const points = [];
-    for (let i = 0; i < docs.length; i++) {
-      const doc = docs[i];
-      const vector = i === 0 ? firstVector : await this.getEmbedding(doc.pageContent);
-      const pointId = doc.id || crypto.randomUUID();
+    const points: any[] = [];
+    // Process embeddings with concurrency 6 leveraging the multi-key pool
+    const concurrency = 6;
+    for (let i = 0; i < docs.length; i += concurrency) {
+      const slice = docs.slice(i, i + concurrency);
+      const vectors = await Promise.all(
+        slice.map(async (doc, idx) => {
+          const globalIdx = i + idx;
+          if (globalIdx === 0) return firstVector;
+          return this.getEmbedding(doc.pageContent);
+        })
+      );
 
-      const sanitizedMetadata: Record<string, any> = {
-        ...doc.metadata,
-        project_id: collectionName,
-        page_content: doc.pageContent,
-      };
-
-      points.push({
-        id: pointId,
-        vector,
-        payload: sanitizedMetadata,
+      slice.forEach((doc, idx) => {
+        const pointId = doc.id || crypto.randomUUID();
+        const sanitizedMetadata: Record<string, any> = {
+          ...doc.metadata,
+          project_id: collectionName,
+          page_content: doc.pageContent,
+        };
+        points.push({
+          id: pointId,
+          vector: vectors[idx],
+          payload: sanitizedMetadata,
+        });
       });
     }
 

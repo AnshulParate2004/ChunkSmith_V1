@@ -3,13 +3,14 @@ import { getUserFromRequest, getSupabaseAdmin } from "@/server/lib/supabase";
 import { DocumentParser } from "@/server/lib/document-parser";
 import { StorageManager } from "@/server/lib/storage";
 import { VectorStoreManager } from "@/server/lib/vector-store";
+import { extractImagesFromPdf, attachImagesToChunks } from "@/server/lib/pdf-image-extractor";
 import { serverConfig } from "@/server/config";
 
 const parser = new DocumentParser();
 const storage = new StorageManager();
 const vectorManager = new VectorStoreManager();
 
-export const maxDuration = 60; // Allow 60 seconds on Vercel Pro/serverless
+export const maxDuration = 300; // Allow up to 5 minutes for deep parsing, OCR, and vector embeddings
 
 export async function POST(request: Request) {
   try {
@@ -110,6 +111,43 @@ export async function POST(request: Request) {
         },
       };
     });
+
+    // 4b. Extract embedded PDF figures/images if parser did not extract them
+    if (totalImages === 0 && chunks.length > 0) {
+      const extractedImages = extractImagesFromPdf(buffer);
+      if (extractedImages.length > 0) {
+        const uploadedImages = [];
+        for (let i = 0; i < extractedImages.length; i++) {
+          const img = extractedImages[i];
+          const imgStoragePath = `${projectId}/images/${documentId}_img_${i + 1}.jpg`;
+          try {
+            await storage.uploadBuffer(
+              img.buffer,
+              imgStoragePath,
+              img.mimeType,
+              serverConfig.SUPABASE_DATA_BUCKET_NAME
+            );
+            const publicUrl = storage.getPublicUrl(imgStoragePath, serverConfig.SUPABASE_DATA_BUCKET_NAME);
+            uploadedImages.push({
+              name: img.name,
+              publicUrl: publicUrl || imgStoragePath,
+              base64: img.base64,
+              index: i,
+            });
+          } catch (err) {
+            uploadedImages.push({
+              name: img.name,
+              publicUrl: "",
+              base64: img.base64,
+              index: i,
+            });
+          }
+        }
+
+        attachImagesToChunks(chunks, uploadedImages);
+        totalImages = uploadedImages.length;
+      }
+    }
 
     // 5. Store processed JSON in Supabase Storage
     const jsonBuffer = Buffer.from(JSON.stringify(chunks, null, 2), "utf-8");

@@ -33,14 +33,15 @@ const UploadPage = () => {
       return;
     }
 
+    const fileToUpload = selectedFile;
     const docId = `${Date.now()}_${selectedFile.name.replace(/[^a-zA-Z0-9.-]/g, "_")}`;
-    setSelectedFile(null);
-    setIsUploading(false);
+    localStorage.setItem(`doc_${docId}_project`, projectId);
+    localStorage.removeItem(`error_${docId}`);
 
     // Navigate immediately to processing window so the user sees live progress!
     navigate(`/processing/${docId}?projectId=${projectId}`);
 
-    apiService.uploadPDF(selectedFile, settings, projectId, docId)
+    apiService.uploadPDF(fileToUpload, settings, projectId, docId)
       .then((response) => {
         if (response && response.document_id) {
           localStorage.setItem(`processing_${response.document_id}`, JSON.stringify({
@@ -55,7 +56,9 @@ const UploadPage = () => {
         }
       })
       .catch((error: any) => {
-        toast.error(error.message || 'Upload failed');
+        const errorMsg = error.message || 'Upload failed';
+        localStorage.setItem(`error_${docId}`, errorMsg);
+        toast.error(errorMsg);
         console.error('Upload error:', error);
       });
   };

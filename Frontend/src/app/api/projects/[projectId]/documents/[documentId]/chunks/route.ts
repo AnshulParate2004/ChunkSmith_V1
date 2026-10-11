@@ -14,11 +14,18 @@ export async function GET(
     // Allow public/project document chunk reading even if guest session
     const { projectId, documentId } = params;
 
+    const cleanId = documentId.replace(/\.pdf$/i, "");
+    const pdfId = documentId.endsWith(".pdf") ? documentId : `${documentId}.pdf`;
+
     let jsonBuffer: Buffer | null = null;
     const candidatePaths = [
       `${projectId}/json/${documentId}_processed.json`,
+      `${projectId}/json/${cleanId}_processed.json`,
+      `${projectId}/json/${pdfId}_processed.json`,
       `${projectId}/json/${documentId}.json`,
+      `${projectId}/json/${cleanId}.json`,
       `json/${documentId}_processed.json`,
+      `json/${cleanId}_processed.json`,
       `json/${documentId}.json`,
       `${projectId}/${documentId}.json`,
     ];

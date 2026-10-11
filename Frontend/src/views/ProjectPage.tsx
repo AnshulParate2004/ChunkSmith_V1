@@ -225,8 +225,8 @@ const ProjectPage = () => {
   return (
     <div className="flex min-h-screen bg-background">
       {/* Sidebar */}
-      <aside className="w-64 border-r border-border bg-card/50 backdrop-blur-sm">
-        <div className="p-6">
+      <aside className="w-72 flex-shrink-0 border-r border-border bg-card/50 backdrop-blur-sm flex flex-col h-screen overflow-hidden">
+        <div className="p-4 flex flex-col h-full overflow-hidden">
           {/* Brand row, similar to ChatGPT icon + name */}
           <div className="flex items-center gap-2 mb-6">
             <div className="w-7 h-7 rounded-full bg-primary/10 flex items-center justify-center">
@@ -304,7 +304,7 @@ const ProjectPage = () => {
             </div>
           )}
 
-          <div className="space-y-2">
+          <div className="space-y-2 flex-1 overflow-y-auto overflow-x-hidden pr-1">
             {sidebarMode === "documents" ? (
               <>
                 {uploadedDocs.length === 0 ? (
@@ -319,33 +319,38 @@ const ProjectPage = () => {
                   filteredDocs.map((doc, index) => (
                     <div
                       key={`${doc.documentId}-${index}`}
-                      className="w-full flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-muted transition-colors group"
+                      className="w-full flex items-center justify-between gap-2 px-3 py-2.5 rounded-lg hover:bg-muted transition-colors group overflow-hidden"
                     >
                       <button
                         onClick={() => handleDocClick(doc)}
-                        className="flex-1 flex items-center gap-3 text-left"
+                        className="flex-1 min-w-0 flex items-center gap-2.5 text-left"
                       >
-                        <div className="relative">
-                          <FileText className="w-4 h-4 text-primary flex-shrink-0" />
+                        <div className="relative flex-shrink-0">
+                          <FileText className="w-4 h-4 text-primary" />
                           <div className="absolute -top-1 -right-1">
                             {getStatusIcon(doc.status)}
                           </div>
                         </div>
                         <div className="flex-1 min-w-0">
-                          <div className="flex items-center gap-2 flex-wrap">
-                            <span className="text-sm font-medium truncate block">
+                          <div className="flex items-center gap-1.5 min-w-0">
+                            <span
+                              className="text-sm font-medium truncate flex-1 min-w-0 block"
+                              title={doc.name}
+                            >
                               {doc.name}
                             </span>
-                            {getStatusBadge(doc.status)}
+                            <div className="flex-shrink-0">
+                              {getStatusBadge(doc.status)}
+                            </div>
                           </div>
-                          <span className="text-xs text-muted-foreground">
+                          <span className="text-xs text-muted-foreground block truncate">
                             {(doc.size / 1024 / 1024).toFixed(2)} MB
                           </span>
                         </div>
                       </button>
                       <button
                         onClick={() => handleDeleteDocument(doc)}
-                        className="opacity-0 group-hover:opacity-100 transition-opacity text-destructive hover:text-destructive flex-shrink-0"
+                        className="opacity-0 group-hover:opacity-100 transition-opacity text-destructive hover:text-destructive flex-shrink-0 p-1 rounded hover:bg-destructive/10"
                         title="Delete processed document"
                       >
                         <Trash2 className="w-4 h-4" />
@@ -367,17 +372,17 @@ const ProjectPage = () => {
                       onClick={() =>
                         navigate(`/chat/${projectId}?conversationId=${conv.id}`)
                       }
-                      className="w-full text-left px-3 py-2 rounded-lg hover:bg-muted transition-colors"
+                      className="w-full text-left px-3 py-2 rounded-lg hover:bg-muted transition-colors overflow-hidden"
                     >
-                      <div className="flex items-center gap-2">
-                        <div className="w-6 h-6 rounded-full bg-primary/10 flex items-center justify-center">
+                      <div className="flex items-center gap-2 min-w-0">
+                        <div className="w-6 h-6 rounded-full bg-primary/10 flex items-center justify-center flex-shrink-0">
                           <MessageSquare className="w-3 h-3 text-primary" />
                         </div>
                         <div className="flex-1 min-w-0">
-                          <div className="text-sm font-medium truncate">
+                          <div className="text-sm font-medium truncate" title={conv.title || "Conversation"}>
                             {conv.title || "Conversation"}
                           </div>
-                          <div className="text-[10px] text-muted-foreground">
+                          <div className="text-[10px] text-muted-foreground truncate">
                             {conv.created_at
                               ? new Date(conv.created_at).toLocaleString()
                               : ""}
