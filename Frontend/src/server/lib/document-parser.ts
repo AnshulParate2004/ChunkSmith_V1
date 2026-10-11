@@ -66,7 +66,7 @@ export class DocumentParser {
       }
 
       const json = await response.json();
-      
+
       // If elements are present in v2 output and non-empty
       if (json.elements && Array.isArray(json.elements) && json.elements.length > 0) {
         return json.elements.map((elem: any) => ({
@@ -84,6 +84,37 @@ export class DocumentParser {
 
       return [];
     }
+
+    // Legacy V1 General API
+    const form = new FormData();
+    form.append("files", buffer, { filename });
+    form.append("strategy", options.strategy || "auto");
+    form.append("chunking_strategy", options.chunkingStrategy || "by_title");
+    form.append("max_characters", String(options.maxCharacters || 3000));
+    form.append("new_after_n_chars", String(options.newAfterNChars || 3800));
+    form.append("combine_text_under_n_chars", String(options.combineTextUnderNChars || 200));
+
+    if (options.languages && options.languages.length) {
+      form.append("languages", JSON.stringify(options.languages));
+    }
+
+    const response = await fetch(this.apiUrl, {
+      method: "POST",
+      headers: {
+        "unstructured-api-key": this.apiKey,
+        ...form.getHeaders(),
+      },
+      body: form.getBuffer() as any,
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`Unstructured API failed (${response.status}): ${errorText}`);
+    }
+
+    const elements = await response.json();
+    return elements as ParsedElement[];
+  }
 
   private chunkMarkdown(
     markdown: string,
@@ -166,36 +197,5 @@ export class DocumentParser {
         },
       };
     });
-  }
-
-    // Legacy V1 General API
-    const form = new FormData();
-    form.append("files", buffer, { filename });
-    form.append("strategy", options.strategy || "auto");
-    form.append("chunking_strategy", options.chunkingStrategy || "by_title");
-    form.append("max_characters", String(options.maxCharacters || 3000));
-    form.append("new_after_n_chars", String(options.newAfterNChars || 3800));
-    form.append("combine_text_under_n_chars", String(options.combineTextUnderNChars || 200));
-
-    if (options.languages && options.languages.length) {
-      form.append("languages", JSON.stringify(options.languages));
-    }
-
-    const response = await fetch(this.apiUrl, {
-      method: "POST",
-      headers: {
-        "unstructured-api-key": this.apiKey,
-        ...form.getHeaders(),
-      },
-      body: form.getBuffer() as any,
-    });
-
-    if (!response.ok) {
-      const errorText = await response.text();
-      throw new Error(`Unstructured API failed (${response.status}): ${errorText}`);
-    }
-
-    const elements = await response.json();
-    return elements as ParsedElement[];
   }
 }
